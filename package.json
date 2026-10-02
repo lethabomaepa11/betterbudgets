@@ -1,0 +1,39 @@
+{
+  "name": "betterbudgets",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "check-types": "turbo run check-types",
+    "dev:native": "turbo run dev -F native --",
+    "db:push": "turbo run db:push -F @betterbudgets/db --",
+    "db:studio": "turbo run db:studio -F @betterbudgets/db --",
+    "db:generate": "turbo run db:generate -F @betterbudgets/db --",
+    "db:migrate": "turbo run db:migrate -F @betterbudgets/db --",
+    "deploy:infra": "turbo run deploy -F @betterbudgets/infra --",
+    "destroy": "turbo run destroy -F @betterbudgets/infra --",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "env:generate": "varlock codegen --path ./apps/web/ && varlock codegen --path ./apps/server/ && varlock codegen --path ./apps/native/ && varlock codegen --path ./packages/db/",
+    "postinstall": "varlock codegen --path ./apps/web/ && varlock codegen --path ./apps/server/ && varlock codegen --path ./apps/native/ && varlock codegen --path ./packages/db/",
+    "auth:generate": "cd apps/server && pnpm run auth:generate"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@betterbudgets/config": "workspace:*",
+    "@types/node": "catalog:",
+    "turbo": "^2.10.12",
+    "typescript": "^6.0.3",
+    "varlock": "catalog:"
+  },
+  "packageManager": "pnpm@12.3.4"
+}
