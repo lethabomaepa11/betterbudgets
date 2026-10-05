@@ -23,7 +23,7 @@ export function useCategories(kind?: CategoryKind): CategoryRow[] {
   const { activeProfile } = useVault();
   const [rows, setRows] = useState<CategoryRow[]>([]);
 
-  useAutoRefresh(`${activeProfile?.id}:${kind ?? "all"}`);
+  const refreshVersion = useAutoRefresh(`${activeProfile?.id}:${kind ?? "all"}`);
 
   useEffect(() => {
     if (!db || !activeProfile) return;
@@ -42,7 +42,7 @@ export function useCategories(kind?: CategoryKind): CategoryRow[] {
     return () => {
       cancelled = true;
     };
-  }, [db, activeProfile, kind]);
+  }, [db, activeProfile, kind, refreshVersion]);
 
   return rows;
 }

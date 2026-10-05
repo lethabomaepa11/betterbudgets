@@ -37,7 +37,7 @@ export default function RecurringPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useAutoRefresh(`${activeProfile?.id}:rules`);
+  const refreshVersion = useAutoRefresh(`${activeProfile?.id}:rules`);
 
   useEffect(() => {
     if (!db || !activeProfile) return;
@@ -56,7 +56,7 @@ export default function RecurringPage() {
     return () => {
       cancelled = true;
     };
-  }, [db, activeProfile]);
+  }, [db, activeProfile, refreshVersion]);
 
   async function refresh() {
     if (!db || !activeProfile) return;
@@ -259,14 +259,27 @@ function RuleList({
                 </div>
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => onAskDelete(rule.id)}
-                disabled={busy}
-                className="mt-3 text-xs text-muted-foreground underline underline-offset-4 transition-colors hover:text-expense-strong disabled:opacity-50"
-              >
-                Remove this series
-              </button>
+              /* Two actions, deliberately different in kind: Edit is a link to a
+                 page with room to change things, Remove is destructive and hidden
+                 behind its own confirmation. Presented side by side because
+                 neither is a footnote to the other — but given different weight
+                 so the destructive one is never the first thing hit. */
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <Link
+                  href={`/recurring/${rule.id}/edit`}
+                  className="text-sm font-medium text-primary transition-colors hover:underline"
+                >
+                  Edit
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => onAskDelete(rule.id)}
+                  disabled={busy}
+                  className="text-xs text-muted-foreground underline underline-offset-4 transition-colors hover:text-expense-strong disabled:opacity-50"
+                >
+                  Remove this series
+                </button>
+              </div>
             )}
           </li>
         ))}

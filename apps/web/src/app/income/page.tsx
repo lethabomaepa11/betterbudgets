@@ -31,7 +31,7 @@ export default function IncomePage() {
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  useAutoRefresh(`${activeProfile?.id}:${month}`);
+  const refreshVersion = useAutoRefresh(`${activeProfile?.id}:${month}`);
 
   useEffect(() => {
     if (!ledger || !activeProfile) return;
@@ -54,7 +54,7 @@ export default function IncomePage() {
     return () => {
       cancelled = true;
     };
-  }, [ledger, activeProfile, month]);
+  }, [ledger, activeProfile, month, refreshVersion]);
 
   const nameOf = (accountId: string) =>
     accounts.find((row) => row.id === accountId)?.name ?? "Account";

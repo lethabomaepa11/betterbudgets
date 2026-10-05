@@ -59,7 +59,7 @@ export default function AccountDetailPage() {
 
   // Re-reads after any write, so a transaction added here shows up on the
   // account's balance without needing a manual refresh.
-  useAutoRefresh(`${activeProfile?.id}:${accountId}`);
+  const refreshVersion = useAutoRefresh(`${activeProfile?.id}:${accountId}`);
 
   // The running total is computed from the transactions, not read off the stored
   // `balance` column, which is only ever the opening figure.
@@ -94,7 +94,7 @@ export default function AccountDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [ledger, activeProfile, accountId]);
+  }, [ledger, activeProfile, accountId, refreshVersion]);
 
   async function archive() {
     if (!ledger || !activeProfile) return;

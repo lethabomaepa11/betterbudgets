@@ -62,7 +62,7 @@ export {
   remainingLockoutMs,
 } from "./credentials";
 
-export { createGoals, contributeToGoal, type GoalWithProgress } from "./goals";
+export { addGoalRecommendation, createGoals, contributeToGoal, type GoalWithProgress } from "./goals";
 
 export {
   confirmOccurrence,
@@ -78,10 +78,14 @@ export {
   syncAllRules,
   syncRule,
   setRuleActive,
+  updateRule,
   UPCOMING_WINDOW_DAYS,
+  type EditScope,
   type NewRecurring,
   type OccurrenceRow,
+  type RuleChanges,
   type RuleRow,
+  type UpdateResult,
 } from "./occurrences";
 
 export {
@@ -107,6 +111,8 @@ export {
 } from "./reminders";
 
 export { VaultProvider, useAutoRefresh, useVault } from "./vault";
+export { SyncProvider, useSync } from "./sync-provider";
+export { syncNow } from "./sync";
 
 export { SCHEMA_VERSION } from "./schema";
 export type {

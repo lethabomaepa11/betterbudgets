@@ -19,7 +19,7 @@ export function useOccurrences() {
   const [rows, setRows] = useState<OccurrenceRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useAutoRefresh(`${activeProfile?.id}:occurrences`);
+  const refreshVersion = useAutoRefresh(`${activeProfile?.id}:occurrences`);
 
   useEffect(() => {
     if (!db || !activeProfile) return;
@@ -44,7 +44,7 @@ export function useOccurrences() {
     return () => {
       cancelled = true;
     };
-  }, [db, activeProfile]);
+  }, [db, activeProfile, refreshVersion]);
 
   return { rows, loading };
 }

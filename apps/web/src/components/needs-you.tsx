@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { cn } from "@betterbudgets/ui/lib/utils";
 import { ArrowDownLeft, ArrowUpRight, Check, Loader2, X } from "lucide-react";
+import Link from "next/link";
 
 import {
   canCover,
@@ -41,11 +42,13 @@ export default function NeedsYou({
   currency: string;
 }) {
   const { db } = useLocalDb();
-  const { activeProfile } = useVault();
+  const { activeProfile, dataChanged } = useVault();
 
   const [confirming, setConfirming] = useState<OccurrenceRow | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const attentionRows = rows.filter((row) => row.daysUntil <= 7);
 
   const format = (minor: number) =>
     new Intl.NumberFormat(undefined, { style: "currency", currency }).format(minor / 100);
@@ -60,7 +63,7 @@ export default function NeedsYou({
    */
   const incomingByDueDate = new Map<string, number>();
   {
-    const inflows = rows
+    const inflows = attentionRows
       .filter((row) => row.type === "inflow")
       .sort((a, b) => a.due_on.localeCompare(b.due_on));
     let running = 0;
@@ -69,13 +72,26 @@ export default function NeedsYou({
       incomingByDueDate.set(row.due_on, running);
     }
     // Any due date at or after the last inflow should still see that total.
-    const lastDue = rows.reduce((latest, row) => (row.due_on > latest ? row.due_on : latest), "");
+    const lastDue = attentionRows.reduce(
+      (latest, row) => (row.due_on > latest ? row.due_on : latest),
+      "",
+    );
     if (lastDue && running > 0 && !incomingByDueDate.has(lastDue)) {
       incomingByDueDate.set(lastDue, running);
     }
   }
 
-  if (rows.length === 0) return null;
+  if (attentionRows.length === 0) return null;
+
+  const urgencyRank = { overdue: 0, today: 1, soon: 2, later: 3 } as const;
+  const prioritizedRows = [...attentionRows].sort(
+    (a, b) =>
+      urgencyRank[urgencyOf(a.daysUntil)] - urgencyRank[urgencyOf(b.daysUntil)] ||
+      a.daysUntil - b.daysUntil ||
+      a.due_on.localeCompare(b.due_on),
+  );
+  const visibleRows = showAll ? prioritizedRows : prioritizedRows.slice(0, 6);
+  const hiddenCount = attentionRows.length - visibleRows.length;
 
   async function settle(row: OccurrenceRow, action: "pay" | "skip") {
     if (!db || !activeProfile) return;
@@ -87,7 +103,9 @@ export default function NeedsYou({
         setConfirming(null);
       } else {
         await skipOccurrence(db, activeProfile.id, row.id);
+        setConfirming(null);
       }
+      dataChanged();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't record that.");
     } finally {
@@ -97,13 +115,33 @@ export default function NeedsYou({
 
   return (
     <section aria-labelledby="needs-you-heading" className="space-y-3">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 id="needs-you-heading" className="text-sm font-medium">
-          Needs you
-        </h2>
-        <span className="text-xs text-muted-foreground">
-          {rows.length} {rows.length === 1 ? "item" : "items"}
-        </span>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 id="needs-you-heading" className="text-sm font-medium">
+            Needs attention
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Confirm or skip these planned payments and income.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              "rounded-full px-2.5 py-1 text-xs font-medium",
+              attentionRows.length > 0
+                ? "bg-warning-subtle text-warning-strong"
+                : "bg-muted text-muted-foreground",
+            )}
+          >
+            {attentionRows.length} {attentionRows.length === 1 ? "item" : "items"}
+          </span>
+          <Link
+            href="/upcoming"
+            className="rounded-full px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-subtle"
+          >
+            Upcoming payments
+          </Link>
+        </div>
       </div>
 
       {error && (
@@ -113,7 +151,7 @@ export default function NeedsYou({
       )}
 
       <ul className="flex flex-col gap-2">
-        {rows.map((row) => (
+        {visibleRows.map((row, index) => (
           <NeedsYouRow
             key={row.id}
             row={row}
@@ -126,9 +164,22 @@ export default function NeedsYou({
             onSkip={() => void settle(row, "skip")}
             onConfirm={() => void settle(row, "pay")}
             onCancel={() => setConfirming(null)}
+            animationDelay={index * 35}
           />
         ))}
       </ul>
+
+      {attentionRows.length > 6 && (
+        <button
+          type="button"
+          onClick={() => setShowAll((current) => !current)}
+          aria-expanded={showAll}
+          className="w-full rounded-xl border border-dashed px-3 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+        >
+          {showAll ? "Show fewer" : `Show all ${attentionRows.length} items`}
+          {!showAll && hiddenCount > 0 ? ` · ${hiddenCount} more` : ""}
+        </button>
+      )}
     </section>
   );
 }
@@ -150,6 +201,7 @@ function NeedsYouRow({
   onSkip,
   onConfirm,
   onCancel,
+  animationDelay,
 }: {
   row: OccurrenceRow;
   balance: number;
@@ -162,16 +214,24 @@ function NeedsYouRow({
   onSkip: () => void;
   onConfirm: () => void;
   onCancel: () => void;
+  animationDelay: number;
 }) {
   const urgency = urgencyOf(row.daysUntil);
   const inflow = row.type === "inflow";
+  const urgencyLabel = {
+    overdue: "Overdue",
+    today: "Due today",
+    soon: "Due soon",
+    later: "Upcoming",
+  }[urgency];
 
   return (
     <li
       className={cn(
-        "rounded-2xl border bg-card p-4",
+        "motion-safe:animate-[needs-you-in_400ms_ease-out] rounded-2xl border bg-card p-4 transition-shadow duration-200 hover:shadow-soft",
         urgency === "overdue" || urgency === "today" ? "border-foreground/20" : "border-border",
       )}
+      style={{ animationDelay: `${animationDelay}ms`, animationFillMode: "both" }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -197,6 +257,17 @@ function NeedsYouRow({
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <span
+            className={cn(
+              "rounded-full px-2 py-1 text-[11px] font-medium",
+              urgency === "overdue" && "bg-expense-subtle text-expense-strong",
+              urgency === "today" && "bg-warning-subtle text-warning-strong",
+              urgency === "soon" && "bg-primary-subtle text-primary",
+              urgency === "later" && "bg-muted text-muted-foreground",
+            )}
+          >
+            {urgencyLabel}
+          </span>
           <button
             type="button"
             onClick={onAsk}
@@ -300,7 +371,7 @@ function ConfirmDialog({
     <div
       role="dialog"
       aria-label={inflow ? "Confirm this income" : "Confirm this payment"}
-      className="mt-4 rounded-2xl border bg-background p-4"
+      className="app-dialog-panel mt-4 rounded-2xl border bg-background p-4"
     >
       <p className="text-sm font-medium">
         {inflow ? `Record ${format(row.amount)} coming in?` : `Record ${format(row.amount)} paid?`}

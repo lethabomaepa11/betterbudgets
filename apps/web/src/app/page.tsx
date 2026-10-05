@@ -5,7 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@betterbudgets/ui/components/card";
-import { ArrowRight, CloudOff, RefreshCw, ShieldCheck, Wallet } from "lucide-react";
+import { ArrowRight, CloudOff, Download, RefreshCw, ShieldCheck, Wallet } from "lucide-react";
 import Link from "next/link";
 
 import { LogoLockup } from "@/components/logo";
@@ -65,6 +65,9 @@ export default function Home() {
           <p className="text-sm text-muted-foreground">
             No sign-up to start. Add an account later if you want sync across devices.
           </p>
+          <Button variant="outline" render={<Link href="/download" />}>
+            <Download data-icon="inline-start" /> Get the mobile app
+          </Button>
         </div>
       </section>
 

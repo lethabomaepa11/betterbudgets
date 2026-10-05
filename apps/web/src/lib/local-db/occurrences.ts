@@ -18,6 +18,7 @@ import type {
   MonthlyAnchor,
   OccurrenceStatus,
   PlannedOccurrence,
+  RecurrenceRule,
   RecurringFrequency,
   RecurringTransaction,
   TransactionType,
@@ -45,6 +46,226 @@ export type NewRecurring = {
   /** First expected date, `YYYY-MM-DD`. */
   startsOn: string;
 };
+
+/** How far an edit reaches. The choice is the user's, not a default. */
+export type EditScope =
+  /**
+   * Everything still pending, including the next one due.
+   *
+   * The right default for a correction: nobody wants to see £1200 on the
+   * dashboard and have an edit leave it there because the bill is due tomorrow.
+   */
+  | "future"
+  /**
+   * Everything except the next payment still waiting to be confirmed.
+   *
+   * For "I have already agreed to pay this one" — the imminent payment keeps the
+   * terms that were agreed, and everything after it takes the new ones.
+   */
+  | "after_next";
+
+/** The parts of a rule that can be changed. All optional: only what is sent moves. */
+export type RuleChanges = {
+  name?: string;
+  /** Minor units. */
+  amount?: number;
+  accountId?: string;
+  categoryId?: string | null;
+  frequency?: RecurringFrequency;
+  anchor?: MonthlyAnchor;
+  /** Re-anchors the series from this date. */
+  startsOn?: string;
+};
+
+/**
+ * Which pending occurrences an edit touches, and what happens to each.
+ *
+ * Split out from `updateRule` because this is where the subtlety lives and it
+ * is worth testing without a database:
+ *
+ * - An occurrence on a date the new rule never produces has to be retired. Left
+ *   standing, it would sit on the dashboard forever asking to be paid for a date
+ *   that is no longer part of the series.
+ * - Under `after_next`, the earliest one is skipped even though it matches, so
+ *   the payment the user has already agreed to keeps its original terms.
+ */
+export function planOccurrenceEdit(
+  pending: readonly PlannedOccurrence[],
+  wantedDates: ReadonlySet<string>,
+  scope: EditScope,
+): {
+  /** Rewrite these with the new terms. */
+  keep: PlannedOccurrence[];
+  /** Tombstone: the date is no longer a due date. */
+  retire: PlannedOccurrence[];
+  /** Leave entirely alone under `after_next`. */
+  preserve: PlannedOccurrence[];
+} {
+  // Taken by due date rather than by row order, so a stale row cannot make the
+  // wrong payment the protected one.
+  const byDate = [...pending].sort((a, b) => a.due_on.localeCompare(b.due_on));
+  const protectedId = scope === "after_next" && byDate[0] ? byDate[0].id : null;
+
+  const keep: PlannedOccurrence[] = [];
+  const retire: PlannedOccurrence[] = [];
+  const preserve: PlannedOccurrence[] = [];
+
+  for (const row of byDate) {
+    // Settled rows are history: `paid` records what the user actually spent and
+    // `skipped` records a decision they made. An edit must not reach either, even
+    // if a caller passes them by mistake.
+    if (row.status !== "pending") continue;
+
+    if (row.id === protectedId) {
+      preserve.push(row);
+      continue;
+    }
+    (wantedDates.has(row.due_on) ? keep : retire).push(row);
+  }
+
+  return { keep, retire, preserve };
+}
+
+/**
+ * The dates a rule produces, starting at `startsOn`, out to `limit`.
+ *
+ * Bounded by a guard rather than a target count, because a `daily` rule walks a
+ * date a day at a time — counting iterations instead of miles would either
+ * produce a handful of days for the wrong frequency or spin.
+ */
+export function datesForRule(from: string, rule: RecurrenceRule, limit = 200): Set<string> {
+  const wanted = new Set<string>();
+  let cursor = from;
+  for (let guard = 0; guard < limit; guard += 1) {
+    wanted.add(cursor);
+    cursor = nextOccurrence(cursor, rule);
+  }
+  return wanted;
+}
+
+/** What an edit actually did, so the screen can say what happened. */
+export type UpdateResult = {
+  /** Pending occurrences rewritten with the new terms. */
+  updated: number;
+  /** Pending occurrences retired: their date is no longer a due date at all. */
+  removed: number;
+  /** Fresh occurrences generated for the new dates. */
+  added: number;
+  /** Left alone under `after_next`: the payment the user has already agreed to. */
+  preserved: number;
+};
+
+/**
+ * Changes a rule and brings its pending occurrences into line.
+ *
+ * The interesting part is the occurrence window, not the rule row. Occurrences
+ * were materialised under the old terms, so updating only the rule would leave
+ * the dashboard asking for £1200 for months after the user corrected it to
+ * £1250. So the window is rewritten with it.
+ *
+ * Deliberately never touched:
+ *
+ * - Anything already `paid` or `skipped`. Those became history, and rewriting
+ *   them would change what the user actually paid.
+ * - The imminent payment under `after_next`. Someone who has already agreed
+ *   £1200 for this month needs this month's payment to stay £1200.
+ *
+ * The rule and its occurrences are written in one batch. A partial write here
+ * would leave a rule whose stated amount disagreeing with what the dashboard
+ * asks for, which is worse than either the old or the new figure.
+ */
+export async function updateRule(
+  db: LocalDb,
+  profileId: string,
+  ruleId: string,
+  changes: RuleChanges,
+  scope: EditScope = "future",
+): Promise<UpdateResult> {
+  const [rule] = await db.query<RecurringTransaction>(
+    `SELECT * FROM recurring_transactions
+      WHERE id = ? AND profile_id = ? AND deleted_at IS NULL`,
+    [ruleId, profileId],
+  );
+  if (!rule) throw new Error("That repeating item no longer exists.");
+
+  const name = changes.name ?? rule.name;
+  const amount = changes.amount ?? rule.amount;
+  const accountId = changes.accountId ?? rule.account_id;
+  const categoryId = changes.categoryId === undefined ? rule.category_id : changes.categoryId;
+  const frequency = changes.frequency ?? rule.frequency;
+  const anchor = changes.anchor ?? rule.anchor;
+  const startsOn = changes.startsOn ?? rule.next_due_date;
+  const dayOfMonth = parseDay(startsOn).date;
+
+  const pending = await db.query<PlannedOccurrence>(
+    `SELECT * FROM planned_occurrences
+      WHERE rule_id = ? AND status = 'pending' AND deleted_at IS NULL
+      ORDER BY due_on ASC`,
+    [ruleId],
+  );
+
+  const timestamp = nowIso();
+  const recurrenceRule = { frequency, anchor, dayOfMonth };
+  const wanted = datesForRule(startsOn, recurrenceRule);
+  const { keep, retire, preserve } = planOccurrenceEdit(pending, wanted, scope);
+
+  const statements: { sql: string; bind: readonly (string | number | null)[] }[] = [
+    {
+      sql: `UPDATE recurring_transactions
+               SET name = ?, amount = ?, account_id = ?, category_id = ?,
+                   frequency = ?, anchor = ?, day_of_month = ?,
+                   next_due_date = ?, updated_at = ?
+             WHERE id = ? AND profile_id = ? AND deleted_at IS NULL`,
+      bind: [
+        name,
+        amount,
+        accountId,
+        categoryId,
+        frequency,
+        anchor,
+        dayOfMonth,
+        startsOn,
+        timestamp,
+        ruleId,
+        profileId,
+      ],
+    },
+  ];
+
+  let updated = 0;
+  let removed = 0;
+
+  for (const row of retire) {
+    // The date is no longer a due date, so nothing would ever come of it.
+    // Tombstoned rather than deleted, like everything else in this schema.
+    statements.push({
+      sql: `UPDATE planned_occurrences
+             SET deleted_at = ?, updated_at = ?
+           WHERE id = ? AND status = 'pending' AND deleted_at IS NULL`,
+      bind: [timestamp, timestamp, row.id],
+    });
+    removed += 1;
+  }
+
+  for (const row of keep) {
+    statements.push({
+      sql: `UPDATE planned_occurrences
+             SET account_id = ?, category_id = ?, name = ?, amount = ?, updated_at = ?
+           WHERE id = ? AND status = 'pending' AND deleted_at IS NULL`,
+      bind: [accountId, categoryId, name, amount, timestamp, row.id],
+    });
+    updated += 1;
+  }
+
+  await db.batch(statements);
+
+  // Runs after the batch so it reads the new rule. It only adds dates the batch
+  // did not cover — the ones just written are already matched, and `preserve`
+  // keeps its own dates and terms regardless.
+  const added = await syncRule(db, profileId, ruleId, startsOn);
+
+  return { updated, removed, added, preserved: preserve.length };
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -215,6 +436,8 @@ export type RuleRow = {
   type: TransactionType | null;
   accountId: string | null;
   accountName: string | null;
+  /** Needed by the edit form: the name alone cannot identify a row. */
+  categoryId: string | null;
   categoryName: string | null;
   frequency: RecurringFrequency;
   anchor: MonthlyAnchor;
@@ -231,7 +454,7 @@ export type RuleRow = {
 export async function listRules(db: LocalDb, profileId: string): Promise<RuleRow[]> {
   const rows = await db.query<Omit<RuleRow, "incomplete">>(
     `SELECT r.id, r.name, r.amount, r.tx_type AS type, r.account_id AS accountId,
-            a.name AS accountName, c.name AS categoryName,
+            a.name AS accountName, r.category_id AS categoryId, c.name AS categoryName,
             r.frequency, r.anchor, r.day_of_month AS dayOfMonth,
             r.is_active AS isActive, r.next_due_date AS nextDueDate,
             (SELECT COUNT(*) FROM planned_occurrences p
@@ -368,9 +591,10 @@ export async function confirmOccurrence(
       bind: [transactionId, occurredOn, timestamp, occurrenceId],
     },
     {
-      sql: `INSERT INTO outbox (entity, entity_id, op, payload, created_at)
-            VALUES ('transactions', ?, 'upsert', ?, ?)`,
+      sql: `INSERT INTO outbox (operation_id, entity, entity_id, op, payload, created_at)
+            VALUES (?, 'transactions', ?, 'upsert', ?, ?)`,
       bind: [
+        crypto.randomUUID(),
         transactionId,
         JSON.stringify({
           id: transactionId,
@@ -411,6 +635,26 @@ export async function createRecurring(
   profileId: string,
   input: NewRecurring,
 ): Promise<{ ruleId: string; generated: number }> {
+  const [account] = await db.query<{ id: string }>(
+    `SELECT id FROM accounts
+      WHERE id = ? AND profile_id = ? AND deleted_at IS NULL AND is_archived = 0`,
+    [input.accountId, profileId],
+  );
+  if (!account) throw new Error("That account does not belong to this profile.");
+
+  if (input.categoryId) {
+    const [category] = await db.query<{ id: string; kind: "income" | "expense" }>(
+      `SELECT id, kind FROM categories
+        WHERE id = ? AND profile_id = ? AND deleted_at IS NULL AND is_archived = 0`,
+      [input.categoryId, profileId],
+    );
+    if (!category) throw new Error("That category does not belong to this profile.");
+    const expectedKind = input.type === "inflow" ? "income" : "expense";
+    if (category.kind !== expectedKind) {
+      throw new Error("That category does not match the recurring money direction.");
+    }
+  }
+
   const ruleId = crypto.randomUUID();
   const timestamp = nowIso();
   const { date } = parseDay(input.startsOn);
@@ -419,16 +663,17 @@ export async function createRecurring(
   await db.batch([
     {
       sql: `INSERT INTO recurring_transactions
-              (id, transaction_id, frequency, anchor, day_of_month, is_active,
+              (id, transaction_id, profile_id, frequency, anchor, day_of_month, is_active,
                next_due_date, account_id, category_id, name, amount, tx_type,
                created_at, updated_at, origin)
-            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, 'local')`,
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, 'local')`,
       bind: [
         ruleId,
         // No transaction yet — that is the point. Occurrences are only written
         // once the user confirms one, so this stays null and the rule is
         // self-contained.
         null,
+        profileId,
         input.frequency,
         anchor,
         date,
@@ -467,8 +712,9 @@ export async function syncRule(
   from?: string,
 ): Promise<number> {
   const [rule] = await db.query<RecurringTransaction>(
-    `SELECT * FROM recurring_transactions WHERE id = ? AND deleted_at IS NULL AND is_active = 1`,
-    [ruleId],
+    `SELECT * FROM recurring_transactions
+      WHERE id = ? AND profile_id = ? AND deleted_at IS NULL AND is_active = 1`,
+    [ruleId, profileId],
   );
   if (!rule) return 0;
 

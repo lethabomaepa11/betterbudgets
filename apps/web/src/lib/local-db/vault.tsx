@@ -105,7 +105,7 @@ const DataVersionContext = createContext<DataVersion>({
  * across the screens is how they drift apart. Pass the things a first read needs
  * — the profile id, the account being viewed — and nothing else.
  */
-export function useAutoRefresh(dependency: unknown): void {
+export function useAutoRefresh(dependency: unknown): number {
   const { nonce } = useContext(DataVersionContext);
   useEffect(() => {
     // Reading `nonce` here is deliberate: it is the signal that a write landed,
@@ -113,6 +113,7 @@ export function useAutoRefresh(dependency: unknown): void {
     void nonce;
     void dependency;
   }, [dependency, nonce]);
+  return nonce;
 }
 
 export function VaultProvider({ children }: { children: React.ReactNode }) {

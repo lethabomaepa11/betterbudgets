@@ -41,7 +41,7 @@ export default function ActivityPage() {
 
   // Re-reads after any write, so a transaction added from the centre button shows
   // up here without a manual refresh.
-  useAutoRefresh(`${activeProfile?.id}:${filter}`);
+  const refreshVersion = useAutoRefresh(`${activeProfile?.id}:${filter}`);
 
   useEffect(() => {
     if (!ledger || !activeProfile) return;
@@ -64,7 +64,7 @@ export default function ActivityPage() {
     return () => {
       cancelled = true;
     };
-  }, [ledger, activeProfile, filter]);
+  }, [ledger, activeProfile, filter, refreshVersion]);
 
   const nameOf = useMemo(() => {
     const map = new Map(accounts.map((row) => [row.id, row.name]));

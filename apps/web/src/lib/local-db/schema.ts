@@ -33,7 +33,7 @@
 //   is what lets someone start budgeting before they have an account.
 
 /** Bumped whenever `MIGRATIONS` gains an entry. Persisted via `PRAGMA user_version`. */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 10;
 
 /** Tables that participate in sync. Credentials deliberately do not. */
 export const SYNCABLE_TABLES = [
@@ -490,6 +490,56 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
     // unaffected by the rebuild.
     `CREATE INDEX idx_recurring_next_due ON recurring_transactions(next_due_date)`,
   ],
+
+  // --- 7: bind recurring rules to their owning profile ---
+  //
+  // The original recurring table reached ownership indirectly through its
+  // template transaction. Rules are now created before a transaction exists,
+  // so that relationship no longer exists. Store the profile explicitly, just
+  // like planned occurrences do, so listing and syncing cannot lose a rule.
+  [
+    `ALTER TABLE recurring_transactions ADD COLUMN profile_id TEXT`,
+    `UPDATE recurring_transactions
+        SET profile_id = (
+          SELECT a.profile_id
+            FROM accounts a
+           WHERE a.id = recurring_transactions.account_id
+        )
+      WHERE profile_id IS NULL`,
+    `CREATE INDEX idx_recurring_profile ON recurring_transactions(profile_id)`,
+  ],
+
+  // --- 8: turn savings goals into dated plans ---
+  [
+    `ALTER TABLE financial_goals ADD COLUMN target_date TEXT`,
+    `ALTER TABLE financial_goals ADD COLUMN monthly_required INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE financial_goals ADD COLUMN feasibility TEXT NOT NULL DEFAULT 'unknown'
+       CHECK (feasibility IN ('comfortable','tight','impossible','unknown'))`,
+    `ALTER TABLE financial_goals ADD COLUMN intent TEXT`,
+  ],
+
+  // --- 9: explicitly scope plans to their profile ---
+  [
+    `ALTER TABLE financial_goals ADD COLUMN profile_id TEXT`,
+    `UPDATE financial_goals
+        SET profile_id = (
+          SELECT profile_id FROM accounts
+           WHERE accounts.id = financial_goals.account_id
+        )
+      WHERE profile_id IS NULL`,
+    `CREATE INDEX idx_goals_profile ON financial_goals(profile_id)`,
+  ],
+
+  // --- 10: durable sync cursor and idempotent outbox operations ---
+  [
+    `ALTER TABLE outbox ADD COLUMN operation_id TEXT`,
+    `UPDATE outbox SET operation_id = 'legacy-' || CAST(seq AS TEXT) WHERE operation_id IS NULL`,
+    `CREATE UNIQUE INDEX idx_outbox_operation_id ON outbox(operation_id)`,
+    `CREATE TABLE sync_state (
+       key TEXT PRIMARY KEY,
+       value TEXT NOT NULL
+     )`,
+  ],
 ];
 
 /**
@@ -773,6 +823,7 @@ export type BudgetItem = {
 export type RecurringTransaction = {
   id: string;
   transaction_id: string;
+  profile_id: string | null;
   frequency: RecurringFrequency;
   /** Added in schema v5. Ignored unless `frequency` is `monthly`. */
   anchor: MonthlyAnchor;
@@ -798,6 +849,7 @@ export type RecurringTransaction = {
 
 export type FinancialGoal = {
   id: string;
+  profile_id: string;
   account_id: string;
   name: string;
   target_amount: number;
@@ -807,6 +859,10 @@ export type FinancialGoal = {
   updated_at: string;
   deleted_at: string | null;
   origin: string | null;
+  target_date: string | null;
+  monthly_required: number;
+  feasibility: "comfortable" | "tight" | "impossible" | "unknown";
+  intent: string | null;
 };
 
 export type GoalRecommendation = {
@@ -862,5 +918,3 @@ export type PlannedOccurrence = {
 };
 
 export const OCCURRENCE_STATUSES: readonly OccurrenceStatus[] = ["pending", "paid", "skipped"];
-
-

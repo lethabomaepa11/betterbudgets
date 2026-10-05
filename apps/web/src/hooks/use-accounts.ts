@@ -19,7 +19,7 @@ export function useAccounts(): AccountWithTotals[] {
   const { activeProfile } = useVault();
   const [accounts, setAccounts] = useState<AccountWithTotals[]>([]);
 
-  useAutoRefresh(activeProfile?.id);
+  const refreshVersion = useAutoRefresh(activeProfile?.id);
 
   useEffect(() => {
     if (!ledger || !activeProfile) return;
@@ -37,7 +37,7 @@ export function useAccounts(): AccountWithTotals[] {
     return () => {
       cancelled = true;
     };
-  }, [ledger, activeProfile]);
+  }, [ledger, activeProfile, refreshVersion]);
 
   return accounts;
 }

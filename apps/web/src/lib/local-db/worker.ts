@@ -368,6 +368,7 @@ function resetDatabase(conn: SqliteHandle): void {
     // that has already gone.
     "planned_occurrences",
     "recurring_transactions",
+    "sync_state",
     "outbox",
     "transactions",
     "categories",

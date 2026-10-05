@@ -44,7 +44,7 @@ export default function ReportsPage() {
   const [balance, setBalance] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  useAutoRefresh(`${activeProfile?.id}:${range}`);
+  const refreshVersion = useAutoRefresh(`${activeProfile?.id}:${range}`);
 
   useEffect(() => {
     if (!db || !activeProfile) return;
@@ -78,7 +78,7 @@ export default function ReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, [db, activeProfile, range]);
+  }, [db, activeProfile, range, refreshVersion]);
 
   const spent = byCategory.reduce((sum, row) => sum + row.total, 0);
   const current = trend[trend.length - 1];

@@ -51,8 +51,9 @@ export const MORE_SCREENS: readonly {
     title: "Money",
     items: [
       { href: "/accounts", label: "Accounts", description: "Balances and what each one is for", Icon: "landmark" },
+      { href: "/upcoming", label: "Upcoming payments", description: "Money out in the next seven days", Icon: "repeat" },
       { href: "/recurring", label: "Repeating money", description: "Rent, salary, subscriptions", Icon: "repeat" },
-      { href: "/goals", label: "Goals", description: "What you are saving for", Icon: "trophy" },
+      { href: "/goals", label: "Plans", description: "What you are making possible", Icon: "trophy" },
     ],
   },
   {

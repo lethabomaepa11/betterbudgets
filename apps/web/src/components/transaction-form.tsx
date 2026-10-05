@@ -30,12 +30,11 @@ export type EditableTransaction = {
   amount: number;
   type: TransactionType;
   account_id: string;
+  source_account_id: string | null;
   occurred_on: string;
   /** Added in schema v4. */
   category_id: string | null;
 };
-
-const TYPES: readonly TransactionType[] = ["outflow", "inflow"];
 
 /**
  * The one form for creating and editing a transaction.
@@ -68,6 +67,7 @@ export default function TransactionForm({
   const [type, setType] = useState<TransactionType>(
     transaction?.type ?? "outflow",
   );
+  const [isTransfer, setIsTransfer] = useState(Boolean(transaction?.source_account_id));
   const [categoryId, setCategoryId] = useState<string>(
     transaction?.category_id ?? "",
   );
@@ -77,6 +77,9 @@ export default function TransactionForm({
   const [name, setName] = useState(transaction?.name ?? "");
   const [accountId, setAccountId] = useState(
     transaction?.account_id ?? defaultAccountId ?? accounts[0]?.id ?? "",
+  );
+  const [sourceAccountId, setSourceAccountId] = useState(
+    transaction?.source_account_id ?? "",
   );
   const [occurredOn, setOccurredOn] = useState(transaction?.occurred_on ?? today());
   const [saving, setSaving] = useState(false);
@@ -102,6 +105,10 @@ export default function TransactionForm({
       setError("Choose an account.");
       return;
     }
+    if (isTransfer && (!sourceAccountId || sourceAccountId === accountId)) {
+      setError("Choose two different accounts for a transfer.");
+      return;
+    }
 
     setSaving(true);
     setError(null);
@@ -110,19 +117,21 @@ export default function TransactionForm({
         await ledger.updateTransaction(activeProfile.id, transaction.id, {
           name: name.trim() || null,
           amount: minor,
-          type,
+          type: isTransfer ? "inflow" : type,
           accountId,
           occurredOn,
-          categoryId: categoryId || null,
+          categoryId: isTransfer ? null : categoryId || null,
+          sourceAccountId: isTransfer ? sourceAccountId : null,
         });
       } else {
         await ledger.addTransaction(activeProfile.id, {
           accountId,
           amount: minor,
-          type,
+          type: isTransfer ? "inflow" : type,
           occurredOn,
           name: name.trim() || null,
-          categoryId: categoryId || null,
+          categoryId: isTransfer ? null : categoryId || null,
+          sourceAccountId: isTransfer ? sourceAccountId : null,
         });
       }
 
@@ -156,28 +165,40 @@ export default function TransactionForm({
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-5">
-      {/* Income vs outflow is a two-way choice, not a dropdown: the point of the
-          toggle is never having to think about which way round a select is. */}
-      <fieldset className="grid grid-cols-2 gap-2">
-        <legend className="sr-only">Direction</legend>
-        {TYPES.map((option) => (
+      <fieldset className="grid grid-cols-3 gap-2">
+        <legend className="sr-only">Transaction type</legend>
+        {(["outflow", "inflow"] as const).map((option) => (
           <button
             key={option}
             type="button"
-            aria-pressed={type === option}
+            aria-pressed={!isTransfer && type === option}
             onClick={() => {
+              setIsTransfer(false);
               setType(option);
-              // The current pick belongs to the other direction, so clearing it
-              // is what stops a stale category from being saved silently.
+              setSourceAccountId("");
               setCategoryId("");
             }}
             className={`h-12 rounded-2xl text-sm font-medium transition-colors ${
-              type === option ? TONE[option] : "bg-muted text-muted-foreground"
+              !isTransfer && type === option ? TONE[option] : "bg-muted text-muted-foreground"
             }`}
           >
             {option === "inflow" ? "Money in" : "Money out"}
           </button>
         ))}
+        <button
+          type="button"
+          aria-pressed={isTransfer}
+          onClick={() => {
+            setIsTransfer(true);
+            setType("inflow");
+            setCategoryId("");
+          }}
+          className={`h-12 rounded-2xl text-sm font-medium transition-colors ${
+            isTransfer ? "bg-primary-subtle text-primary" : "bg-muted text-muted-foreground"
+          }`}
+        >
+          Transfer
+        </button>
       </fieldset>
 
       <label className="block">
@@ -193,7 +214,7 @@ export default function TransactionForm({
       </label>
 
       <label className="block">
-        <span className="text-sm font-medium">Account</span>
+        <span className="text-sm font-medium">{isTransfer ? "To account" : "Account"}</span>
         <select
           value={accountId}
           onChange={(event) => setAccountId(event.target.value)}
@@ -207,10 +228,33 @@ export default function TransactionForm({
         </select>
       </label>
 
+      {isTransfer && (
+        <label className="block">
+          <span className="text-sm font-medium">From account</span>
+          <select
+            value={sourceAccountId}
+            onChange={(event) => setSourceAccountId(event.target.value)}
+            className={FIELD_CLASS}
+          >
+            <option value="">Choose an account</option>
+            {accounts
+              .filter((account) => account.id !== accountId)
+              .map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name}
+                </option>
+              ))}
+          </select>
+          <span className="mt-1.5 block text-xs text-muted-foreground">
+            The amount leaves this account and arrives in the destination above.
+          </span>
+        </label>
+      )}
+
       {/* Only rendered once categories exist: an empty dropdown teaches nothing and
           adds a tap to the common path. The transaction is still perfectly valid
           without one — `category_id` is nullable by design. */}
-      {categories.length > 0 && (
+      {!isTransfer && categories.length > 0 && (
         <label className="block">
           <span className="text-sm font-medium">Category</span>
           <select

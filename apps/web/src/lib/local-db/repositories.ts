@@ -84,8 +84,8 @@ function nowIso() {
 /** The outbox entry for a write. `payload` is the row as a server would see it. */
 function outboxStatement(entity: string, entityId: string, payload: unknown) {
   return {
-    sql: "INSERT INTO outbox (entity, entity_id, op, payload, created_at) VALUES (?, ?, 'upsert', ?, ?)",
-    bind: [entity, entityId, payload === null ? null : JSON.stringify(payload), nowIso()],
+    sql: "INSERT INTO outbox (operation_id, entity, entity_id, op, payload, created_at) VALUES (?, ?, ?, 'upsert', ?, ?)",
+    bind: [crypto.randomUUID(), entity, entityId, payload === null ? null : JSON.stringify(payload), nowIso()],
   };
 }
 
@@ -272,8 +272,8 @@ export function createLedger(db: LocalDb) {
       const [start, end] = monthBounds(month);
       const rows = await db.query<MonthlyTotals>(
         `SELECT
-           COALESCE(SUM(CASE WHEN t.type = 'inflow' THEN t.amount ELSE 0 END), 0) AS inflow,
-           COALESCE(SUM(CASE WHEN t.type = 'outflow' THEN t.amount ELSE 0 END), 0) AS outflow
+           COALESCE(SUM(CASE WHEN t.type = 'inflow' AND t.source_account_id IS NULL THEN t.amount ELSE 0 END), 0) AS inflow,
+           COALESCE(SUM(CASE WHEN t.type = 'outflow' AND t.source_account_id IS NULL THEN t.amount ELSE 0 END), 0) AS outflow
            FROM transactions t
            JOIN accounts a ON a.id = t.account_id
           WHERE t.deleted_at IS NULL
@@ -309,11 +309,19 @@ export function createLedger(db: LocalDb) {
     async listAccountsWithTotals(profileId: string): Promise<AccountWithTotals[]> {
       const rows = await db.query<AccountWithTotals>(
         `SELECT a.*,
-                COALESCE(SUM(CASE WHEN t.type = 'inflow'  THEN t.amount ELSE 0 END), 0) AS inflow,
-                COALESCE(SUM(CASE WHEN t.type = 'outflow' THEN t.amount ELSE 0 END), 0) AS outflow
+                COALESCE(SUM(CASE
+                  WHEN t.account_id = a.id AND t.type = 'inflow' THEN t.amount
+                  ELSE 0
+                END), 0) AS inflow,
+                COALESCE(SUM(CASE
+                  WHEN (t.account_id = a.id AND t.type = 'outflow')
+                    OR (t.source_account_id = a.id AND t.account_id != a.id)
+                  THEN t.amount
+                  ELSE 0
+                END), 0) AS outflow
            FROM accounts a
            LEFT JOIN transactions t
-             ON t.account_id = a.id AND t.deleted_at IS NULL
+             ON (t.account_id = a.id OR t.source_account_id = a.id) AND t.deleted_at IS NULL
           WHERE a.deleted_at IS NULL AND a.is_archived = 0 AND a.profile_id = ?
           GROUP BY a.id
           ORDER BY a.name COLLATE NOCASE ASC`,
@@ -352,10 +360,11 @@ export function createLedger(db: LocalDb) {
         `SELECT t.*
            FROM transactions t
            JOIN accounts a ON a.id = t.account_id
-          WHERE t.account_id = ? AND t.deleted_at IS NULL AND a.profile_id = ?
+          WHERE (t.account_id = ? OR t.source_account_id = ?)
+            AND t.deleted_at IS NULL AND a.profile_id = ?
           ORDER BY t.occurred_on DESC, t.updated_at DESC
           LIMIT ?`,
-        [accountId, profileId, limit],
+        [accountId, accountId, profileId, limit],
       );
     },
 
@@ -376,6 +385,7 @@ export function createLedger(db: LocalDb) {
            JOIN accounts a ON a.id = t.account_id
           WHERE t.deleted_at IS NULL
             AND t.type = ?
+            AND t.source_account_id IS NULL
             AND a.deleted_at IS NULL
             AND a.profile_id = ?
             AND t.occurred_on >= ? AND t.occurred_on < ?`,
@@ -406,6 +416,7 @@ export function createLedger(db: LocalDb) {
            JOIN accounts a ON a.id = t.account_id
           WHERE t.deleted_at IS NULL
             AND t.type = ?
+            AND t.source_account_id IS NULL
             AND a.deleted_at IS NULL
             AND a.profile_id = ?
             ${window}
@@ -431,6 +442,7 @@ export function createLedger(db: LocalDb) {
         type?: TransactionType;
         accountId?: string;
         occurredOn?: string;
+        sourceAccountId?: string | null;
         /** Added in schema v4. Pass `null` to unfile the transaction. */
         categoryId?: string | null;
         /** Added in schema v4. */
@@ -454,9 +466,22 @@ export function createLedger(db: LocalDb) {
 
       const accountId = changes.accountId ?? existing.account_id;
       if (changes.accountId) await this.getAccount(profileId, changes.accountId);
+      const type = changes.type ?? existing.type;
+      const sourceAccountId =
+        changes.sourceAccountId === undefined
+          ? existing.source_account_id
+          : changes.sourceAccountId;
+      if (sourceAccountId) {
+        if (sourceAccountId === accountId) {
+          throw new Error("A transfer needs two different accounts.");
+        }
+        if (type !== "inflow") {
+          throw new Error("Transfers must arrive as money in.");
+        }
+        await this.getAccount(profileId, sourceAccountId);
+      }
 
       const name = changes.name === undefined ? existing.name : changes.name?.trim() || null;
-      const type = changes.type ?? existing.type;
       const occurredOn = changes.occurredOn ?? existing.occurred_on;
       const categoryId =
         changes.categoryId === undefined ? existing.category_id : changes.categoryId;
@@ -478,6 +503,7 @@ export function createLedger(db: LocalDb) {
       const row: Transaction = {
         ...existing,
         account_id: accountId,
+        source_account_id: sourceAccountId,
         name,
         amount,
         type,
@@ -490,11 +516,12 @@ export function createLedger(db: LocalDb) {
       await db.batch([
         {
           sql: `UPDATE transactions
-                  SET account_id = ?, name = ?, amount = ?, type = ?,
+                  SET account_id = ?, source_account_id = ?, name = ?, amount = ?, type = ?,
                       occurred_on = ?, updated_at = ?, category_id = ?, notes = ?
                 WHERE id = ?`,
           bind: [
             row.account_id,
+            row.source_account_id,
             row.name,
             row.amount,
             row.type,
@@ -528,7 +555,8 @@ export function createLedger(db: LocalDb) {
       ];
 
       if (query.accountId) {
-        clauses.push("t.account_id = ?");
+        clauses.push("(t.account_id = ? OR t.source_account_id = ?)");
+        params.push(query.accountId);
         params.push(query.accountId);
       }
       if (query.type) {
@@ -577,6 +605,21 @@ export function createLedger(db: LocalDb) {
       );
       if (!owner || owner.profile_id !== profileId) {
         throw new Error("That account does not belong to this profile.");
+      }
+      if (input.sourceAccountId) {
+        if (input.sourceAccountId === input.accountId) {
+          throw new Error("A transfer needs two different accounts.");
+        }
+        const [sourceOwner] = await db.query<{ profile_id: string }>(
+          "SELECT profile_id FROM accounts WHERE id = ? AND deleted_at IS NULL",
+          [input.sourceAccountId],
+        );
+        if (!sourceOwner || sourceOwner.profile_id !== profileId) {
+          throw new Error("That source account does not belong to this profile.");
+        }
+        if (input.type !== "inflow") {
+          throw new Error("Transfers must arrive as money in.");
+        }
       }
 
       const timestamp = nowIso();
@@ -674,9 +717,9 @@ export function createLedger(db: LocalDb) {
           bind: [timestamp, timestamp, transactionId],
         },
         {
-          sql: `INSERT INTO outbox (entity, entity_id, op, payload, created_at)
-                VALUES ('transactions', ?, 'delete', ?, ?)`,
-          bind: [transactionId, JSON.stringify({ id: transactionId }), timestamp],
+          sql: `INSERT INTO outbox (operation_id, entity, entity_id, op, payload, created_at)
+                VALUES (?, 'transactions', ?, 'delete', ?, ?)`,
+          bind: [crypto.randomUUID(), transactionId, JSON.stringify({ id: transactionId }), timestamp],
         },
       );
 

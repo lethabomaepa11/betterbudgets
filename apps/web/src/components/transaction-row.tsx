@@ -25,17 +25,19 @@ export default function TransactionRow({
   actions?: React.ReactNode;
 }) {
   const income = transaction.type === "inflow";
+  const transfer = transaction.source_account_id !== null;
 
   return (
     <li className="flex items-center gap-3 rounded-2xl bg-card p-4 shadow-soft ring-1 ring-foreground/6">
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">
-          {transaction.name ?? (income ? "Money in" : "Money out")}
+          {transaction.name ?? (transfer ? "Transfer" : income ? "Money in" : "Money out")}
         </p>
         <p className="text-xs text-muted-foreground">
           {/* Generated occurrences are marked, so a user looking at rent can see
               why another one is already sitting there. */}
           {formatDay(transaction.occurred_on)}
+          {transfer ? " · transfer" : ""}
           {transaction.recurring_id ? " · recurring" : ""}
           {accountName ? ` · ${accountName}` : ""}
         </p>

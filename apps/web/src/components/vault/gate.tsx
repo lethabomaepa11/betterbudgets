@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { CircleAlert, Loader2, RefreshCcw } from "lucide-react";
 
+import { Logo } from "@/components/logo";
 import { useVault } from "@/lib/local-db/vault";
 import { useLocalDb } from "@/lib/local-db/provider";
 
@@ -20,31 +22,71 @@ import OnboardingRedirect from "./onboarding-redirect";
  */
 export default function VaultGate({ children }: { children: React.ReactNode }) {
   const { status, activeProfile } = useVault();
+  const [hasTransfer, setHasTransfer] = useState<boolean | null>(null);
   const {
     status: dbStatus,
     reason,
     retry,
   } = useLocalDb();
 
+  useEffect(() => {
+    setHasTransfer(Boolean(new URLSearchParams(window.location.search).get("transfer")));
+  }, []);
+
   if (status === "checking" && dbStatus !== "unavailable") {
     return (
       <div
-        className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-muted-foreground"
+        className="flex min-h-[50vh] flex-col items-center justify-center gap-4 text-muted-foreground"
         role="status"
+        aria-live="polite"
       >
-        <Loader2 className="size-5 animate-spin" aria-hidden="true" />
-        <p className="text-sm">Opening your local database…</p>
+        <Logo
+          size={56}
+          priority
+          className="motion-safe:animate-[logo-loader_1.4s_ease-in-out_infinite]"
+        />
+        <div className="flex items-center gap-2">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          <p className="text-sm">Opening your budget…</p>
+        </div>
       </div>
     );
   }
 
   if (status === "onboard") return <VaultOnboarding />;
 
+  if (hasTransfer === null && status === "unlocked") {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center" role="status">
+        <Loader2 className="size-5 animate-spin text-muted-foreground" aria-hidden="true" />
+        <span className="sr-only">Preparing transfer</span>
+      </div>
+    );
+  }
+
   // Someone who has a profile but hasn't finished setup is sent into the flow
   // rather than dropped onto a dashboard they haven't configured. Declared after
   // the locked check and before the children so a locked vault still wins.
-  if (status === "unlocked" && activeProfile && activeProfile.onboarding_step !== "done") {
+  if (
+    status === "unlocked" &&
+    activeProfile &&
+    activeProfile.onboarding_step !== "done" &&
+    !hasTransfer
+  ) {
     return <OnboardingRedirect step={activeProfile.onboarding_step} />;
+  }
+
+  // A transfer link is also the onboarding context for a new destination
+  // profile. Keep the URL intact until the profile exists and the receiver has
+  // restored its data; otherwise the normal onboarding redirect drops the
+  // encrypted transfer key from the URL.
+  if (
+    status === "unlocked" &&
+    activeProfile &&
+    activeProfile.onboarding_step !== "done" &&
+    hasTransfer
+  ) {
+    return <VaultOnboarding />;
   }
 
   if (status === "locked") return <VaultLock />;

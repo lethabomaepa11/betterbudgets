@@ -5,9 +5,10 @@ import { useEffect, useState } from "react";
 import type { Route } from "next";
 
 import { cn } from "@betterbudgets/ui/lib/utils";
-import { Banknote, CreditCard, Landmark, PiggyBank, Repeat, TrendingUp, Wallet } from "lucide-react";
+import { Banknote, CreditCard, Landmark, PiggyBank, Plus, Repeat, TrendingUp, Wallet } from "lucide-react";
 import Link from "next/link";
 
+import AddTransactionSheet from "@/components/add-transaction-sheet";
 import LocalDbStatus from "@/components/local-db-status";
 import NeedsYou from "@/components/needs-you";
 import { useOccurrences } from "@/hooks/use-occurrences";
@@ -52,12 +53,13 @@ export default function Dashboard() {
 
   // Re-reads whenever a write lands anywhere in the tree, which is what keeps
   // these totals honest after the transaction form saves.
-  useAutoRefresh(activeProfile?.id);
+  const refreshVersion = useAutoRefresh(activeProfile?.id);
 
   const currency = activeProfile?.currency ?? "USD";
   const [month] = useState(currentMonth);
   const [totals, setTotals] = useState<MonthlyTotals>({ inflow: 0, outflow: 0 });
   const [accounts, setAccounts] = useState<AccountWithTotals[]>([]);
+  const [adding, setAdding] = useState(false);
   const { rows: occurrences } = useOccurrences();
 
   useEffect(() => {
@@ -79,7 +81,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [ledger, activeProfile, month]);
+  }, [ledger, activeProfile, month, refreshVersion]);
 
   const firstName = activeProfile?.name.split(" ")[0];
   const remaining = totals.inflow - totals.outflow;
@@ -116,13 +118,24 @@ export default function Dashboard() {
 
   return (
     <div className="flex flex-col gap-8">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          {firstName ? `Hey ${firstName}` : "Your budget"}
-        </h1>
-        <p className="text-muted-foreground">
-          {formatMonthLabel(month)}, across every account on this device.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            {firstName ? `Hey ${firstName}` : "Your budget"}
+          </h1>
+          <p className="text-muted-foreground">
+            {formatMonthLabel(month)}, across every account on this device.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          aria-haspopup="dialog"
+          className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2"
+        >
+          <Plus className="size-4" aria-hidden="true" />
+          Add transaction
+        </button>
       </header>
 
       {/* Above the totals on purpose: this is the only part of the dashboard
@@ -248,6 +261,8 @@ export default function Dashboard() {
         </span>
         <Repeat className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
       </Link>
+
+      {adding && <AddTransactionSheet onClose={() => setAdding(false)} />}
     </div>
   );
 }

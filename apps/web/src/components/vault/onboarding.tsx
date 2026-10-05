@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@betterbudgets/ui/components/button";
 import { cn } from "@betterbudgets/ui/lib/utils";
@@ -9,6 +9,9 @@ import { ArrowLeft, ArrowRight, Hash, KeyRound, UserRound } from "lucide-react";
 import { MIN_PASSWORD_LENGTH, PIN_LENGTH } from "@/lib/local-db/credentials";
 import type { CredentialType } from "@/lib/local-db/schema";
 import { useVault } from "@/lib/local-db/vault";
+import { useLocalDb } from "@/lib/local-db/provider";
+import { decodePortableData, decodePortableLink, replaceProfileData, type PortableData } from "@/lib/portable-data";
+import { decryptTransferPayload } from "@/lib/share-transfer";
 
 import CredentialEntry from "./credential-entry";
 
@@ -46,13 +49,57 @@ const FIELD_CLASS = cn(
  * with a credential typed once and confirmed once.
  */
 export default function VaultOnboarding() {
-  const { createProfile, busy, error, clearError } = useVault();
+  const { createProfile, busy, error, clearError, activeProfile, dataChanged } = useVault();
+  const { db } = useLocalDb();
 
   const [step, setStep] = useState<Step>("name");
   const [name, setName] = useState("");
   const [credentialType, setCredentialType] = useState<CredentialType>("pin");
   const [secret, setSecret] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  const [portable, setPortable] = useState<PortableData | null>(null);
+  const [portableMessage, setPortableMessage] = useState<string | null>(null);
+  const [transfer, setTransfer] = useState<{ id: string; secret: string } | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const value = new URLSearchParams(window.location.search).get("data");
+    const transferId = new URLSearchParams(window.location.search).get("transfer");
+    const transferSecret = window.location.hash.slice(1);
+    if (transferId && transferSecret) {
+      setTransfer({ id: transferId, secret: transferSecret });
+      setPortableMessage("A secure transfer is ready. Create your local unlock credential to receive it.");
+      return;
+    }
+    if (!value) return;
+    try {
+      setPortable(decodePortableLink(value));
+      setPortableMessage("Shared data is ready. Create your local unlock credential and it will replace the destination data.");
+    } catch {
+      setPortableMessage("That share link is invalid or no longer supported.");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!activeProfile || !db || activeProfile.onboarding_step === "done") return;
+    const receive = async () => {
+      let incoming = portable;
+      if (!incoming && transfer) {
+        const response = await fetch("/api/share/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "download", id: transfer.id, code: transfer.id.slice(0, 6).toUpperCase() }) });
+        const result = await response.json();
+        if (!response.ok || !result.ready) throw new Error("The other device is still preparing the transfer.");
+        incoming = decodePortableData(await decryptTransferPayload(result.payload, result.nonce, transfer.secret));
+      }
+      if (!incoming) return;
+      await replaceProfileData(db, activeProfile.id, incoming);
+      dataChanged();
+      setPortableMessage("Your data was restored. Continue onboarding to finish setting up this device.");
+      setPortable(null);
+      setTransfer(null);
+      window.history.replaceState({}, "", "/onboarding");
+    };
+    void receive().catch((cause) => setPortableMessage(cause instanceof Error ? cause.message : "Your profile was created, but the shared data could not be restored."));
+  }, [activeProfile, portable, transfer, db, dataChanged]);
 
   function choose(type: CredentialType) {
     clearError();
@@ -114,6 +161,28 @@ export default function VaultOnboarding() {
               Continue
               <ArrowRight data-icon="inline-end" />
             </Button>
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".bbdata,.txt"
+              className="sr-only"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void file.text().then((text) => {
+                  try {
+                    setPortable(decodePortableData(text));
+                    setPortableMessage("Data file ready. Create your local unlock credential to restore it here.");
+                  } catch {
+                    setPortableMessage("That file is not a supported Better Budgets data file.");
+                  }
+                });
+                event.target.value = "";
+              }}
+            />
+            <button type="button" onClick={() => fileInput.current?.click()} className="mt-3 w-full rounded-full px-4 py-2 text-sm text-muted-foreground underline-offset-4 hover:bg-accent hover:text-foreground hover:underline">
+              Restore from a .bbdata file instead
+            </button>
+            {portableMessage && <p role="status" className="mt-3 text-xs/relaxed text-muted-foreground">{portableMessage}</p>}
           </>
         )}
 

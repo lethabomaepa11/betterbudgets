@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { cn } from "@betterbudgets/ui/lib/utils";
 import { ArrowDownLeft, Check, Repeat, X } from "lucide-react";
@@ -32,8 +33,15 @@ export default function AddTransactionSheet({
 }) {
   const router = useRouter();
   const panel = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(() => typeof document !== "undefined");
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
     // Focus moves into the dialog on open. Without it, Tab walks straight past the
     // sheet into the page behind, which is still mounted and still focusable.
     panel.current?.querySelector<HTMLElement>("a, button")?.focus();
@@ -65,16 +73,19 @@ export default function AddTransactionSheet({
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [mounted, onClose]);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
+  if (!mounted) return null;
+
+  return createPortal(
+    (
+    <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center">
       {/* Scrim. A button so it is reachable by keyboard, not just by pointer. */}
       <button
         type="button"
         aria-label="Close"
         onClick={onClose}
-        className="absolute inset-0 cursor-default bg-foreground/40 backdrop-blur-sm"
+        className="app-dialog-scrim absolute inset-0 cursor-default bg-foreground/40 backdrop-blur-sm"
       />
 
       <div
@@ -84,7 +95,7 @@ export default function AddTransactionSheet({
         aria-labelledby="add-transaction-title"
         /* Lifts clear of the home indicator rather than sitting underneath it. */
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
-        className="relative w-full max-w-md rounded-t-3xl bg-background p-5 pb-6 shadow-sheet"
+        className="app-dialog-panel relative w-full max-w-md rounded-t-3xl bg-background p-5 pb-6 shadow-sheet md:rounded-3xl"
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <h2 id="add-transaction-title" className="text-lg font-semibold tracking-tight">
@@ -141,5 +152,7 @@ export default function AddTransactionSheet({
         </button>
       </div>
     </div>
+    ),
+    document.body,
   );
 }
