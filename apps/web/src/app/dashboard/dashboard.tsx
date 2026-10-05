@@ -5,10 +5,12 @@ import { useEffect, useState } from "react";
 import type { Route } from "next";
 
 import { cn } from "@betterbudgets/ui/lib/utils";
-import { Banknote, CreditCard, Landmark, PiggyBank, TrendingUp, Wallet } from "lucide-react";
+import { Banknote, CreditCard, Landmark, PiggyBank, Repeat, TrendingUp, Wallet } from "lucide-react";
 import Link from "next/link";
 
 import LocalDbStatus from "@/components/local-db-status";
+import NeedsYou from "@/components/needs-you";
+import { useOccurrences } from "@/hooks/use-occurrences";
 import { useLocalDb } from "@/lib/local-db/provider";
 import {
   currentMonth,
@@ -56,6 +58,7 @@ export default function Dashboard() {
   const [month] = useState(currentMonth);
   const [totals, setTotals] = useState<MonthlyTotals>({ inflow: 0, outflow: 0 });
   const [accounts, setAccounts] = useState<AccountWithTotals[]>([]);
+  const { rows: occurrences } = useOccurrences();
 
   useEffect(() => {
     if (!ledger || !activeProfile) return;
@@ -80,6 +83,12 @@ export default function Dashboard() {
 
   const firstName = activeProfile?.name.split(" ")[0];
   const remaining = totals.inflow - totals.outflow;
+
+  // What is actually available to spend right now, across every account. The
+  // "Left this month" figure below is a different thing: it measures the month,
+  // not today's position, and using it to judge whether a bill is covered would
+  // be wrong whenever money is left in a savings account.
+  const availableBalance = accounts.reduce((total, account) => total + account.net, 0);
 
   // The two headline figures double as links into the screens that break them
   // down — the totals are the natural entry point, so leaving them inert would
@@ -115,6 +124,15 @@ export default function Dashboard() {
           {formatMonthLabel(month)}, across every account on this device.
         </p>
       </header>
+
+      {/* Above the totals on purpose: this is the only part of the dashboard
+          that needs something from the user, and a summary of past months is a
+          poor thing to put in front of it. */}
+      <NeedsYou
+        rows={occurrences}
+        balance={availableBalance}
+        currency={currency}
+      />
 
       <section
         aria-label={`Summary for ${formatMonthLabel(month)}`}
@@ -214,6 +232,22 @@ export default function Dashboard() {
       </section>
 
       <LocalDbStatus />
+
+      {/* Reached from here rather than from the transaction form: "set up rent"
+          is a one-off decision a user makes once, and a checkbox on every
+          transaction entry is not where anyone goes looking for it. */}
+      <Link
+        href="/recurring/new"
+        className="flex items-center justify-between gap-3 rounded-2xl border border-dashed p-4 text-sm transition-colors hover:bg-accent/50"
+      >
+        <span>
+          <span className="block font-medium">Rent, salary, subscriptions</span>
+          <span className="mt-0.5 block text-xs text-muted-foreground">
+            Set up money that repeats, and confirm it each time it comes round.
+          </span>
+        </span>
+        <Repeat className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      </Link>
     </div>
   );
 }
