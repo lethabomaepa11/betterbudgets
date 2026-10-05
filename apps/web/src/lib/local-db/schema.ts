@@ -1,5 +1,5 @@
-// The on-device database layer only runs in the browser — main thread or the
-// SQLite worker — never on the server, so it is declared as a client module.
+﻿// The on-device database layer only runs in the browser â€” main thread or the
+// SQLite worker â€” never on the server, so it is declared as a client module.
 // That marker is also load-bearing: varlock's Turbopack loader injects an
 // env-init into every module *without* it, and that init throws inside a
 // Worker (no `window`, no `process.env`), which would kill the worker before
@@ -24,7 +24,7 @@
 //   represent `0.1 + 0.2` correctly, so cents win.
 // * Booleans are stored as 0/1 (`is_active`, `is_allowance`, `is_archived`).
 // * Direction lives in `transactions.type` (Inflow/Outflow) and `amount` is
-//   therefore never negative — which is what the diagram implies by splitting
+//   therefore never negative â€” which is what the diagram implies by splitting
 //   the two apart.
 // * Every syncable row carries `updated_at` / `deleted_at` / `origin`. Rows are
 //   tombstoned rather than deleted, and `updated_at` drives last-write-wins, so
@@ -33,7 +33,7 @@
 //   is what lets someone start budgeting before they have an account.
 
 /** Bumped whenever `MIGRATIONS` gains an entry. Persisted via `PRAGMA user_version`. */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /** Tables that participate in sync. Credentials deliberately do not. */
 export const SYNCABLE_TABLES = [
@@ -48,7 +48,7 @@ export type SyncableTable = (typeof SYNCABLE_TABLES)[number];
 
 /**
  * Ordered, append-only. Entry N takes the database from `user_version` N to
- * N+1. Never edit or reorder an entry that has shipped — add a new one instead.
+ * N+1. Never edit or reorder an entry that has shipped â€” add a new one instead.
  *
  * Entry 0 is the pre-release v1 layout and entry 1 replaces it with the model
  * above. A brand-new database runs both in sequence, so entry 0's tables are
@@ -120,7 +120,7 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
     `DROP TABLE IF EXISTS outbox`,
 
     // The local profile. `salt`/`verifier` never leave the device and are never
-    // written to the outbox — sync moves data, not credentials.
+    // written to the outbox â€” sync moves data, not credentials.
     `CREATE TABLE profiles (
        id              TEXT PRIMARY KEY,
        name            TEXT NOT NULL,
@@ -332,7 +332,7 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
 
     // Free-form notes. Separate from `name` because the name is what gets
     // grouped in reports, while notes are only ever read by the person who wrote
-    // them — merging the two loses one or the other.
+    // them â€” merging the two loses one or the other.
     `ALTER TABLE transactions ADD COLUMN notes TEXT`,
 
     // A budget is a period (October 2026) owning a line per category. Period is
@@ -428,6 +428,68 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
     `ALTER TABLE recurring_transactions ADD COLUMN amount INTEGER CHECK (amount IS NULL OR amount >= 0)`,
     `ALTER TABLE recurring_transactions ADD COLUMN tx_type TEXT CHECK (tx_type IS NULL OR tx_type IN ('inflow', 'outflow'))`,
   ],
+
+  // --- 6: make a rule independent of any one transaction ---
+  //
+  // `recurring_transactions.transaction_id` was `NOT NULL REFERENCES
+  // transactions(id) ON DELETE CASCADE`, which encodes the assumption that a rule
+  // is generated from a transaction. That assumption no longer holds: a rule is
+  // now created *before* any money moves, and the row it points at may not exist
+  // yet.
+  //
+  // Two separate problems, and only fixing the first leaves a live one:
+  //
+  // 1. NOT NULL. Creating any rule at all failed with SQLITE_CONSTRAINT_NOTNULL.
+  //    SQLite cannot relax a NOT NULL column with ALTER, so this is a rebuild.
+  // 2. ON DELETE CASCADE. Even with the column nullable, deleting the transaction
+  //    a rule was built from would delete the rule and every occurrence it still
+  //    owes the user. A rule outlives its occurrences, so the dependency goes the
+  //    other way round and is now expressed by a bare id.
+  //
+  // `day_of_month` defaults to 1 rather than being derived per-row: pre-v5 rules
+  // have no template columns and cannot generate anything anyway (see syncRule),
+  // so a day number for them is inert. Existing rows are carried across intact.
+  [
+    `CREATE TABLE recurring_transactions_v6 (
+       id             TEXT PRIMARY KEY,
+       -- Nullable and unconstrained on purpose. Kept as a bare id so an existing
+       -- rule still records which transaction it came from, but nothing depends
+       -- on that row existing and deleting it no longer removes the rule.
+       transaction_id TEXT,
+       frequency      TEXT NOT NULL CHECK (frequency IN ('daily','weekly','monthly','yearly')),
+       anchor         TEXT NOT NULL DEFAULT 'day_of_month',
+       day_of_month   INTEGER NOT NULL DEFAULT 1,
+       is_active      INTEGER NOT NULL DEFAULT 1,
+       next_due_date  TEXT NOT NULL,
+       account_id     TEXT REFERENCES accounts(id) ON DELETE CASCADE,
+       category_id    TEXT REFERENCES categories(id) ON DELETE SET NULL,
+       name           TEXT,
+       amount         INTEGER CHECK (amount IS NULL OR amount >= 0),
+       tx_type        TEXT CHECK (tx_type IS NULL OR tx_type IN ('inflow', 'outflow')),
+       created_at     TEXT NOT NULL,
+       updated_at     TEXT NOT NULL,
+       deleted_at     TEXT,
+       origin         TEXT
+     )`,
+
+    `INSERT INTO recurring_transactions_v6
+        (id, transaction_id, frequency, anchor, day_of_month, is_active, next_due_date,
+         account_id, category_id, name, amount, tx_type, created_at, updated_at, deleted_at, origin)
+     SELECT id, transaction_id, frequency, anchor, day_of_month, is_active, next_due_date,
+            account_id, category_id, name, amount, tx_type,
+            created_at, updated_at, deleted_at, origin
+       FROM recurring_transactions`,
+
+    // Order matters: the old table has to be gone before the new one can take
+    // its name, and both have to happen before the index is recreated because
+    // dropping a table takes its indexes with it.
+    `DROP TABLE recurring_transactions`,
+    `ALTER TABLE recurring_transactions_v6 RENAME TO recurring_transactions`,
+
+    // Recreated under its original name, so anything already querying by it is
+    // unaffected by the rebuild.
+    `CREATE INDEX idx_recurring_next_due ON recurring_transactions(next_due_date)`,
+  ],
 ];
 
 /**
@@ -448,7 +510,7 @@ export const CONNECTION_PRAGMAS = [
 export type CredentialType = "password" | "pin";
 
 /**
- * Account.Type — which pocket the money sits in.
+ * Account.Type â€” which pocket the money sits in.
  *
  * Deliberately *not* "income"/"expense": those describe direction, which the
  * transaction already carries. An account is a place (checking, credit, cash), and
@@ -472,7 +534,7 @@ export const ACCOUNT_TYPES: readonly AccountType[] = [
 ];
 
 /**
- * Category.Kind — whether filing something here counts as money in or money out.
+ * Category.Kind â€” whether filing something here counts as money in or money out.
  *
  * Separate from the account type: a category answers "what was it for", an account
  * answers "which pocket", and a single category pair can span both.
@@ -481,7 +543,7 @@ export type CategoryKind = "income" | "expense";
 
 export const CATEGORY_KINDS: readonly CategoryKind[] = ["income", "expense"];
 
-/** Budget.Period — how often a budget repeats. */
+/** Budget.Period â€” how often a budget repeats. */
 export type BudgetPeriod = "weekly" | "monthly";
 
 export const BUDGET_PERIODS: readonly BudgetPeriod[] = ["weekly", "monthly"];
@@ -503,7 +565,7 @@ export type MonthlyAnchor =
   | "day_of_month"
   /** First Monday, or the 1st when the month starts on one. */
   | "first_weekday"
-  /** Last Monday–Friday of the month; falls back to the 28th-ish last day. */
+  /** Last Mondayâ€“Friday of the month; falls back to the 28th-ish last day. */
   | "last_weekday"
   /** The final day of the month, whatever that turns out to be. */
   | "last_day";
@@ -548,7 +610,7 @@ export const GOAL_STATUSES: readonly GoalStatus[] = ["active", "completed", "imp
 //
 // SQLite stores booleans as 0/1 and decimal money as integers, so the
 // `boolean` / `decimal` attributes from the diagram appear here as
-// `number` — call sites convert explicitly rather than assuming.
+// `number` â€” call sites convert explicitly rather than assuming.
 // ---------------------------------------------------------------------------
 
 /** The diagram's `User`, bound to this device. */
@@ -583,7 +645,7 @@ export type ProfileSettings = Pick<Profile, "currency" | "name">;
  * the tab mid-onboarding resumes where they left off rather than starting over.
  *
  * `done` is the terminal value. Steps are ordered, so "the furthest step reached"
- * could be derived from which columns are set — but deriving it means every new
+ * could be derived from which columns are set â€” but deriving it means every new
  * step needs a migration, so it is stored explicitly instead.
  */
 export type OnboardingStep =
@@ -603,7 +665,7 @@ export type BudgetFor =
   | "business"
   | "other";
 
-/** What the UI needs to list a profile — deliberately excludes the credential. */
+/** What the UI needs to list a profile â€” deliberately excludes the credential. */
 export type ProfileSummary = Pick<
   Profile,
   "id" | "name" | "credential_type" | "failed_attempts" | "locked_until" | "currency"
@@ -628,7 +690,7 @@ export type Account = {
 export type Transaction = {
   id: string;
   account_id: string;
-  /** `SourceAccount` — the leg money leaves, for a transfer. */
+  /** `SourceAccount` â€” the leg money leaves, for a transfer. */
   source_account_id: string | null;
   name: string | null;
   /** Minor units, always non-negative; `type` carries the direction. */
@@ -649,7 +711,7 @@ export type Transaction = {
 };
 
 /**
- * A category group. Optional — `group_id` is nullable, so a flat list is a valid
+ * A category group. Optional â€” `group_id` is nullable, so a flat list is a valid
  * list rather than a half-configured hierarchy.
  */
 export type CategoryGroup = {
@@ -681,7 +743,7 @@ export type Category = {
   origin: string | null;
 };
 
-/** A budget period (October 2026) — the thing limits are measured against. */
+/** A budget period (October 2026) â€” the thing limits are measured against. */
 export type Budget = {
   id: string;
   profile_id: string;
@@ -762,7 +824,7 @@ export type GoalRecommendation = {
  * One dated occurrence of a recurrence that has NOT happened yet.
  *
  * The distinction from `transactions` is the whole point of this table. Rent is
- * not money that has moved, so it must not sit in `transactions` — that table
+ * not money that has moved, so it must not sit in `transactions` â€” that table
  * feeds balances, monthly totals and the spending report, and a pre-materialised
  * future payment would already have been subtracted from the account by the time
  * the user was asked to confirm it.
@@ -800,4 +862,5 @@ export type PlannedOccurrence = {
 };
 
 export const OCCURRENCE_STATUSES: readonly OccurrenceStatus[] = ["pending", "paid", "skipped"];
+
 

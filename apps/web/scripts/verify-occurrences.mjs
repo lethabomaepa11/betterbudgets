@@ -263,10 +263,12 @@ test("deleting an account removes its occurrences", (db) => {
   assert.equal(countRows(db, "planned_occurrences"), 0, "no orphans left behind");
 });
 
-test("existing v4 data survives the migration to v5", (db) => {
+test("existing v4 data survives every migration to v6", (db) => {
   const ts = now();
-  // A database stopped at v4, exactly as an existing user's would be.
-  migrate(db, SCHEMA_VERSION - 1);
+  // A database stopped at v4, then brought all the way up: this is the path an
+  // existing user actually takes, and the one that has to carry their data
+  // through two table rebuilds.
+  migrate(db, 4);
   assert.equal(
     db.selectValue("SELECT COUNT(*) FROM sqlite_master WHERE name = 'planned_occurrences'"),
     0,
@@ -317,6 +319,223 @@ test("the v5 columns exist on recurring_transactions after upgrading", (db) => {
 test("no foreign key violations after migration", (db) => {
   seed(db);
   assert.equal(rows(db, "PRAGMA foreign_key_check").length, 0);
+});
+
+/**
+ * Inserts a rule the way `createRecurring` does, template columns and all.
+ *
+ * This is the shape that a test which only seeded `planned_occurrences` by hand
+ * never tried, and it is exactly where the NOT NULL failure lived: the column
+ * list and the bind list have to agree, and a rule created before any money moves
+ * has no `transaction_id` to point at.
+ */
+function insertRule(db, { id = "r1", transactionId = null } = {}) {
+  const ts = now();
+  db.exec({
+    sql: `INSERT INTO recurring_transactions
+            (id, transaction_id, frequency, anchor, day_of_month, is_active, next_due_date,
+             account_id, category_id, name, amount, tx_type, created_at, updated_at, origin)
+          VALUES (?, ?, 'monthly', 'last_weekday', 31, 1, '2026-10-30', ?, NULL, 'Rent', 120000, 'outflow', ?, ?, 'local')`,
+    bind: [id, transactionId, ACCOUNT, ts, ts],
+  });
+}
+
+test("a rule can be created with no transaction to point at", (db) => {
+  migrate(db);
+  seedProfile(db);
+  // The exact statement that failed with SQLITE_CONSTRAINT_NOTNULL.
+  insertRule(db);
+  assert.equal(countRows(db, "recurring_transactions"), 1);
+});
+test("a rule keeps a transaction_id when one is supplied", (db) => {
+  migrate(db);
+  seedProfile(db);
+  const ts = now();
+  db.exec({
+    sql: `INSERT INTO transactions
+            (id, account_id, name, amount, type, occurred_on, created_at, updated_at)
+          VALUES ('t1', ?, 'Rent', 120000, 'outflow', '2026-09-30', ?, ?)`,
+    bind: [ACCOUNT, ts, ts],
+  });
+  insertRule(db, { transactionId: "t1" });
+  assert.equal(
+    rows(db, "SELECT transaction_id FROM recurring_transactions WHERE id = 'r1'")[0].transaction_id,
+    "t1",
+  );
+});
+
+test("deleting the transaction a rule came from does not delete the rule", (db) => {
+  migrate(db);
+  seedProfile(db);
+  const ts = now();
+  db.exec({
+    sql: `INSERT INTO transactions
+            (id, account_id, name, amount, type, occurred_on, created_at, updated_at)
+          VALUES ('t1', ?, 'Rent', 120000, 'outflow', '2026-09-30', ?, ?)`,
+    bind: [ACCOUNT, ts, ts],
+  });
+  insertRule(db, { transactionId: "t1" });
+  insertOccurrence(db, { id: "o1", ruleId: "r1" });
+
+  db.exec({ sql: "DELETE FROM transactions WHERE id = 't1'", bind: [] });
+
+  // A rule outlives its occurrences. Losing the series because one payment was
+  // tidied away would silently stop the rent reminders.
+  assert.equal(countRows(db, "recurring_transactions"), 1, "the rule must survive");
+});
+
+test("deleting an account still removes its rules and occurrences", (db) => {
+  migrate(db);
+  seedProfile(db);
+  insertRule(db);
+  insertOccurrence(db, { id: "o1", ruleId: "r1" });
+
+  db.exec({ sql: "UPDATE accounts SET deleted_at = ? WHERE id = ?", bind: [now(), ACCOUNT] });
+  db.exec({ sql: "DELETE FROM accounts WHERE id = ?", bind: [ACCOUNT] });
+
+  assert.equal(countRows(db, "recurring_transactions"), 0, "no orphaned rules");
+  assert.equal(countRows(db, "planned_occurrences"), 0, "no orphaned occurrences");
+});
+
+test("the idx_recurring_next_due index survives the rebuild", (db) => {
+  migrate(db);
+  assert.ok(
+    objectsOf(db, "SELECT name FROM sqlite_master WHERE type = 'index'").includes(
+      "idx_recurring_next_due",
+    ),
+    "dropping the table took its indexes with it",
+  );
+});
+
+test("a v4 database with real data upgrades to v6 and accepts a new rule", (db) => {
+  // The scenario that actually failed in the browser: an existing database
+  // created before any of this work, brought up to the current version, with the
+  // user's own accounts and transactions still in it. Every previous test built
+  // its data against the current schema, so none of them exercised this path.
+  migrate(db, 4);
+  seedProfile(db);
+  const ts = now();
+  db.exec({
+    sql: `INSERT INTO transactions
+            (id, account_id, name, amount, type, occurred_on, created_at, updated_at)
+          VALUES ('salary', ?, 'Salary', 250000, 'inflow', '2026-09-01', ?, ?)`,
+    bind: [ACCOUNT, ts, ts],
+  });
+
+  migrateTo(db, SCHEMA_VERSION);
+
+  // The user's data is intact.
+  assert.equal(countRows(db, "transactions"), 1);
+  assert.equal(db.selectValue("PRAGMA user_version"), SCHEMA_VERSION);
+  assert.equal(rows(db, "PRAGMA foreign_key_check").length, 0);
+
+  // And the thing that used to throw now works.
+  insertRule(db, { id: "new-rent" });
+  assert.equal(countRows(db, "recurring_transactions"), 1);
+});
+
+test("an existing v5 database with a rule upgrades to v6", (db) => {
+  migrate(db, SCHEMA_VERSION - 1);
+  seedProfile(db);
+  const ts = now();
+  db.exec({
+    sql: `INSERT INTO transactions
+            (id, account_id, name, amount, type, occurred_on, created_at, updated_at)
+          VALUES ('t-legacy', ?, 'Rent', 90000, 'outflow', '2026-09-15', ?, ?)`,
+    bind: [ACCOUNT, ts, ts],
+  });
+  db.exec({
+    sql: `INSERT INTO recurring_transactions
+            (id, transaction_id, frequency, anchor, day_of_month, is_active, next_due_date,
+             account_id, category_id, name, amount, tx_type, created_at, updated_at, origin)
+          VALUES ('legacy', 't-legacy', 'monthly', 'day_of_month', 15, 1, '2026-10-15', ?, NULL, 'Rent', 90000, 'outflow', ?, ?, 'local')`,
+    bind: [ACCOUNT, ts, ts],
+  });
+
+  migrateTo(db, SCHEMA_VERSION);
+
+  assert.equal(countRows(db, "recurring_transactions"), 1, "the rule must survive the rebuild");
+  // And a second rule can be created alongside it.
+  insertRule(db, { id: "another" });
+  assert.equal(countRows(db, "recurring_transactions"), 2);
+});
+
+test("rules created before v6 survive the rebuild", (db) => {
+  // A database at v5 with a rule in it: the rebuild must carry the row across
+  // with its history intact.
+  migrate(db, SCHEMA_VERSION - 1);
+  seedProfile(db);
+  const ts = now();
+  // A real transaction row, because at v5 `transaction_id` is still a foreign
+  // key. The point of the test is that the *value* survives, not that a dangling
+  // id is tolerated.
+  db.exec({
+    sql: `INSERT INTO transactions
+            (id, account_id, name, amount, type, occurred_on, created_at, updated_at)
+          VALUES ('t-legacy', ?, 'Rent', 90000, 'outflow', '2026-09-15', ?, ?)`,
+    bind: [ACCOUNT, ts, ts],
+  });
+  db.exec({
+    sql: `INSERT INTO recurring_transactions
+            (id, transaction_id, frequency, anchor, day_of_month, is_active, next_due_date,
+             account_id, category_id, name, amount, tx_type, created_at, updated_at, origin)
+          VALUES ('legacy', 't-legacy', 'monthly', 'day_of_month', 15, 1, '2026-10-15', ?, NULL, 'Rent', 90000, 'outflow', ?, ?, 'local')`,
+    bind: [ACCOUNT, ts, ts],
+  });
+
+  migrateTo(db, SCHEMA_VERSION);
+
+  const rule = rows(db, "SELECT * FROM recurring_transactions WHERE id = 'legacy'")[0];
+  assert.ok(rule, "the legacy rule must still exist");
+  assert.equal(rule.frequency, "monthly");
+  assert.equal(rule.day_of_month, 15);
+  assert.equal(rule.amount, 90000);
+  assert.equal(rule.tx_type, "outflow");
+  assert.equal(rule.transaction_id, "t-legacy");
+});
+
+test("a rule created at v6 needs no template transaction", (db) => {
+  // The v6 rebuild is what makes this legal: before it, `transaction_id` was
+  // NOT NULL, which is precisely the error this whole entry exists to fix.
+  migrate(db);
+  seedProfile(db);
+  const ts = now();
+  db.exec({
+    sql: `INSERT INTO recurring_transactions
+            (id, transaction_id, frequency, is_active, next_due_date,
+             created_at, updated_at)
+          VALUES ('new-rule', NULL, 'monthly', 1, '2026-10-15', ?, ?)`,
+    bind: [ts, ts],
+  });
+
+  const rule = rows(db, "SELECT * FROM recurring_transactions WHERE id = 'new-rule'")[0];
+  assert.equal(rule.transaction_id, null);
+  assert.equal(rule.account_id, null, "no template yet");
+  assert.equal(rule.name, null);
+  assert.equal(rule.amount, null);
+  assert.equal(rule.tx_type, null);
+  // The guard in syncRule is exactly this condition, so a partial rule is
+  // skipped rather than generating occurrences that cannot be written.
+  assert.ok(!rule.account_id || rule.name === null || rule.amount === null || !rule.tx_type);
+});
+
+test("v5 still rejected a null transaction_id, which is why v6 exists", (db) => {
+  // Pinning the old behaviour, so a future "simplification" that drops the
+  // rebuild cannot look like a harmless cleanup: the constraint it removed was
+  // what made rule creation impossible.
+  migrate(db, SCHEMA_VERSION - 1);
+  seedProfile(db);
+  const ts = now();
+  assert.throws(
+    () =>
+      db.exec({
+        sql: `INSERT INTO recurring_transactions
+                (id, transaction_id, frequency, is_active, next_due_date, created_at, updated_at)
+              VALUES ('r', NULL, 'monthly', 1, '2026-10-15', ?, ?)`,
+        bind: [ts, ts],
+      }),
+    /NOT NULL|constraint/i,
+  );
 });
 
 console.log(`\n${passed} occurrence database checks passed`);
