@@ -91,10 +91,40 @@ export const MAX_NAV_SLOTS = 5;
  * Logging a transaction is by far the most frequent thing a user does here, so
  * it gets the centre and a full tap target rather than being buried in a menu.
  */
+/**
+ * The primary action, which asks what kind of transaction before it navigates.
+ *
+ * A chooser rather than a direct link, because "one-off" and "recurring" are
+ * different screens with different questions, and picking the wrong one leaves
+ * the user on a form that is subtly wrong for what they meant. One extra tap to
+ * never mis-file a payment.
+ *
+ * Not a question asked on `/transactions/new` itself: Income, Expenses and
+ * Activity all link straight there from their empty states, and someone logging
+ * their very first transaction has already answered "one-off" by being on that
+ * screen. Asking them again would be noise.
+ */
 export const NAV_CENTER = {
-  href: "/transactions/new",
   label: "Add a transaction",
+  /** The two things it can become. */
+  choices: [
+    {
+      href: "/transactions/new",
+      title: "Just this once",
+      description: "Something that happened, and is done with.",
+      Icon: "once",
+    },
+    {
+      href: "/recurring/new",
+      title: "Every month",
+      description: "Rent, salary, a subscription. It will ask you each time.",
+      Icon: "repeat",
+    },
+  ],
 } as const;
+
+/** Icons for the chooser, kept as names for the same reason the nav model's are. */
+export type ChoiceIcon = "once" | "repeat";
 
 /** True when `pathname` is inside the route `href` points at. */
 export function isActivePath(pathname: string, href: string) {

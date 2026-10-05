@@ -9,7 +9,7 @@
  *
  * Run against a dev server: node --experimental-strip-types apps/web/scripts/smoke.mts
  */
-import { chromium } from "playwright";
+import { chromium, type Page } from "playwright";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:3001";
 
@@ -98,6 +98,148 @@ for (const route of ROUTES) {
 
 check("no uncaught console errors", consoleErrors.length === 0, consoleErrors.slice(0, 2).join(" | "));
 
+/**
+ * The centre button's chooser, exercised for real.
+ *
+ * This is the one flow that cannot be checked by looking at a URL: the button
+ * opens a dialog rather than navigating, so a route test sees nothing at all. It
+ * also needs a phone viewport, because the bar is `md:hidden` and at desktop
+ * width the button does not exist.
+ */
+const mobile = await browser.newContext({
+  viewport: { width: 390, height: 844 },
+  // Shares the first context's storage, so the OPFS database is unlocked here too
+  // and the tab bar is actually present to press.
+  storageState: await browser.contexts()[0]!.storageState(),
+});
+const small = await mobile.newPage();
+
+await small.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" });
+
+/**
+ * Gets past the vault gate so there is a tab bar to press.
+ *
+ * `BottomNav` renders only while the vault is unlocked, so on a clean browser
+ * there is no bar at all. Walking the real profile-creation flow is the only way
+ * to reach the button in a test; a stubbed unlock would not exercise the same
+ * code path a user does.
+ */
+async function unlockVault(target: Page) {
+  // The form only exists once the SQLite worker has opened OPFS, which takes a
+  // moment. Checking immediately returns "no profile" and gives up before the
+  // gate has even rendered, so this waits for the field to appear.
+  const nameField = target.locator("#profile-name");
+  const appeared = await nameField
+    .waitFor({ state: "visible", timeout: 20_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!appeared) return false;
+
+  await nameField.fill("Smoke Test");
+
+  // Three screens, not one: name -> how you want to unlock -> the secret itself.
+  // Pressing Continue on the name screen only advances to the method screen, so
+  // each step has to be walked in turn.
+  await target.getByRole("button", { name: /^Continue$/ }).first().click();
+  await target.waitForTimeout(400);
+
+  const pinOption = target.getByRole("button", { name: /pin/i }).first();
+  if (await pinOption.isVisible().catch(() => false)) await pinOption.click();
+  await target.waitForTimeout(400);
+
+  // The PIN screen is a keypad, not a text field: there is no `<input>` to fill.
+  // Five digits, because that is what the screen asks for and the Create button
+  // stays disabled until exactly that many are in.
+  for (const digit of ["1", "2", "3", "4", "5"]) {
+    await target.getByRole("button", { name: digit, exact: true }).first().click();
+    await target.waitForTimeout(100);
+  }
+
+  const confirm = target.getByRole("button", { name: /create my profile/i }).first();
+  const ready = await confirm
+    .waitFor({ state: "visible", timeout: 5000 })
+    .then(() => confirm.isEnabled())
+    .catch(() => false);
+  if (ready) await confirm.click();
+  await target.waitForTimeout(3000);
+
+  // Onboarding follows, and every step is skippable.
+  for (let step = 0; step < 6; step += 1) {
+    if (!target.url().includes("/onboarding")) break;
+    const skip = target.getByRole("button", { name: /skip for now/i }).first();
+    if (await skip.isVisible().catch(() => false)) {
+      await skip.click();
+    } else {
+      const next = target.getByRole("button", { name: /continue|next|finish/i }).first();
+      if (!(await next.isVisible().catch(() => false))) break;
+      await next.click();
+    }
+    await target.waitForTimeout(1200);
+  }
+  return true;
+}
+
+const unlocked = await unlockVault(small);
+if (!unlocked) {
+  console.log("  note  no profile form found; assuming the vault is already unlocked");
+}
+
+// Wait out the gate: until the profile is unlocked there is no bar to press.
+await small
+  .waitForSelector('nav[aria-label="Primary"] button[aria-haspopup="dialog"]', { timeout: 20_000 })
+  .catch(() => {});
+
+const addButton = small.locator('nav[aria-label="Primary"] button[aria-haspopup="dialog"]');
+
+// BottomNav renders only while the vault is unlocked, so with no profile in this
+// browser there is genuinely no bar to press. Reported rather than asserted: the
+// chooser cannot be reached without a profile, and failing the whole run on that
+// would make this check useless on a clean machine.
+const barPresent = (await addButton.count()) === 1;
+check(
+  "the tab bar renders on a phone viewport once the vault is unlocked",
+  barPresent,
+  "no unlocked profile, so BottomNav correctly renders nothing",
+);
+
+if (barPresent) {
+  check("the centre button is a button, not a link", (await addButton.count()) === 1);
+  check(
+    "it is labelled for screen readers",
+    (await addButton.getAttribute("aria-label")) === "Add a transaction",
+  );
+
+  await addButton.click();
+
+  // The question, asked before any form is shown.
+  const dialog = small.locator('[role="dialog"]');
+  check("pressing it asks which kind of transaction", (await dialog.count()) === 1);
+  check(
+    "one-off is offered",
+    await dialog.getByText("Just this once").isVisible().catch(() => false),
+  );
+  check(
+    "recurring is offered",
+    await dialog.getByText("Every month").isVisible().catch(() => false),
+  );
+  check("it has not navigated anywhere yet", !small.url().includes("/transactions/new"), small.url());
+
+  // Escape closes it, and closing must not leave the user anywhere new.
+  await small.keyboard.press("Escape");
+  await small.waitForTimeout(300);
+  check("Escape closes the chooser", (await dialog.count()) === 0);
+  check("and stays put", !small.url().includes("/transactions/new"), small.url());
+
+  // Reopening and choosing must actually navigate to that choice.
+  await addButton.click();
+  await dialog.getByText("Every month").click();
+  await small.waitForTimeout(2000);
+  check("choosing recurring goes to the repeating form", small.url().includes("/recurring/new"), small.url());
+} else {
+  console.log("  note  skipped the chooser checks: this browser has no unlocked profile");
+}
+
+await mobile.close();
 await browser.close();
 
 console.log(failures === 0 ? "\nsmoke: all checks passed" : `\nsmoke: ${failures} check(s) failed`);

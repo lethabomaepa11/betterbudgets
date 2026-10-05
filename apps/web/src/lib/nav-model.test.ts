@@ -61,15 +61,40 @@ test("every tab has a distinct route", () => {
 });
 
 test("the action button is not also a tab", () => {
-  assert.ok(
-    !NAV_ITEMS.some((item) => item.href === NAV_CENTER.href),
-    `${NAV_CENTER.href} is both a tab and the centre button`,
-  );
+  // The button now opens a chooser rather than navigating, so the check is that
+  // none of its destinations are also tabs — otherwise one of them appears twice.
+  const tabs = new Set(NAV_ITEMS.map((item) => item.href));
+  for (const choice of NAV_CENTER.choices) {
+    assert.ok(!tabs.has(choice.href), `${choice.href} is both a tab and a button choice`);
+  }
 });
 
-test("the action button is the transaction form", () => {
-  assert.equal(NAV_CENTER.href, "/transactions/new");
+test("the action button offers one-off and repeating, not a single destination", () => {
+  // The button used to link straight to the one-off form, which meant a monthly
+  // bill had to be remembered as "recurring" somewhere else, or it was filed as a
+  // single payment and quietly never came round again.
   assert.ok(NAV_CENTER.label.length > 0, "the button has no label for screen readers");
+
+  const hrefs = NAV_CENTER.choices.map((choice) => choice.href);
+  assert.ok(hrefs.includes("/transactions/new"), "no way to add a one-off");
+  assert.ok(hrefs.includes("/recurring/new"), "no way to add something repeating");
+});
+
+test("each choice says what it is for", () => {
+  // "Just this once" and "Every month" are not self-explanatory to everyone, and
+  // a mis-filed rent payment is the expensive kind of wrong.
+  for (const choice of NAV_CENTER.choices) {
+    assert.ok(choice.title.length > 0, "a choice has no title");
+    assert.ok(
+      choice.description.trim().length > 0,
+      `"${choice.title}" has no description, so it cannot be told from the other`,
+    );
+  }
+});
+
+test("the two choices go to different screens", () => {
+  const hrefs = NAV_CENTER.choices.map((choice) => choice.href);
+  assert.equal(new Set(hrefs).size, hrefs.length, "both choices lead to the same form");
 });
 
 test("More does not duplicate a tab", () => {
