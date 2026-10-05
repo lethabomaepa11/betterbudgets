@@ -237,7 +237,7 @@ export default function Dashboard() {
           is a one-off decision a user makes once, and a checkbox on every
           transaction entry is not where anyone goes looking for it. */}
       <Link
-        href="/recurring/new"
+        href="/recurring"
         className="flex items-center justify-between gap-3 rounded-2xl border border-dashed p-4 text-sm transition-colors hover:bg-accent/50"
       >
         <span>

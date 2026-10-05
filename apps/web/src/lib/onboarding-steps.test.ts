@@ -1,9 +1,9 @@
-/**
+﻿/**
  * The routing rules for onboarding, asserted directly.
  *
  * This exists because the flow was broken twice by reasoning instead of
  * checking: once by deriving a path from a step name (404), and once by having
- * "what do we persist" and "where do we go" disagree — which made Continue
+ * "what do we persist" and "where do we go" disagree â€” which made Continue
  * navigate to the page it was already on, so it looked like a dead button.
  *
  * Run with: node --experimental-strip-types apps/web/src/lib/onboarding-steps.test.ts
@@ -30,9 +30,19 @@ const ALL_STEPS: OnboardingStep[] = [
 ];
 
 let passed = 0;
+let failed = 0;
 
 function test(name: string, fn: () => void) {
-  fn();
+  // Catches and reports rather than throwing, so one failure does not hide the
+  // rest. `failed` is what makes the run exit non-zero at the bottom.
+  try {
+    fn();
+  } catch (cause) {
+    failed += 1;
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    console.log(`  FAIL  ${name} - ${detail.replace(/\s+/g, " ").slice(0, 200)}`);
+    return;
+  }
   passed += 1;
   console.log(`  ok  ${name}`);
 }
@@ -64,7 +74,7 @@ test("the whole flow reaches the dashboard, visiting each screen once", () => {
 
 test("leaving the first screen moves off it", () => {
   // The exact bug: Continue persisted "account" but routed by "purpose", which
-  // maps back to /onboarding — the page it was already on.
+  // maps back to /onboarding â€” the page it was already on.
   const next = nextPersistedStep("currency");
   assert.equal(next, "account");
   assert.equal(routeForStep(next), "/onboarding/account");
@@ -114,3 +124,4 @@ test("back navigation mirrors forward navigation", () => {
 });
 
 console.log(`\n${passed} onboarding routing assertions passed`);
+if (failed > 0) throw new Error(`${failed} onboarding routing assertion(s) failed`);

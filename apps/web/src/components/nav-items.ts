@@ -1,38 +1,51 @@
-import { Bell, ChartPie, Home, Settings, Target, Trophy } from "lucide-react";
+import {
+  ChartPie,
+  Ellipsis,
+  Home,
+  Landmark,
+  Repeat,
+  Settings,
+  Target,
+  Trophy,
+  Wallet,
+} from "lucide-react";
+
+import {
+  MORE_SCREENS as MODEL_MORE_SCREENS,
+  NAV_ITEMS as MODEL_NAV_ITEMS,
+  type NavIcon,
+} from "@/lib/nav-model";
 
 /**
- * Single source of truth for top-level navigation. Both the desktop header and
- * the mobile bottom bar read from here, so the two can never drift apart.
+ * Binds the navigation model's icon names to components.
  *
- * `href` values are kept as literals so Next's `typedRoutes` can verify them.
- *
- * Order matters: the first entry sits left of the bottom bar's primary action and
- * the rest sit to its right, so the centre slot is always the button rather than
- * whichever item happens to be second. A new screen appended to the end therefore
- * lands on the right without silently displacing the button.
+ * The model lives in `@/lib/nav-model` with no icon imports, which is what lets
+ * the navigation rules (five slots, nothing unreachable, no duplicates) be unit
+ * tested. This file is the only place that knows an icon is a component, so there
+ * is exactly one mapping to keep in step.
  */
-export const NAV_ITEMS = [
-  { href: "/dashboard", label: "Home", Icon: Home },
-  { href: "/activity", label: "Activity", Icon: Bell },
-  { href: "/reports", label: "Reports", Icon: ChartPie },
-  { href: "/budgets", label: "Budgets", Icon: Target },
-  { href: "/goals", label: "Goals", Icon: Trophy },
-  { href: "/settings", label: "Settings", Icon: Settings },
-] as const;
+const ICONS: Record<NavIcon, typeof Home> = {
+  home: Home,
+  wallet: Wallet,
+  target: Target,
+  more: Ellipsis,
+  landmark: Landmark,
+  repeat: Repeat,
+  trophy: Trophy,
+  chart: ChartPie,
+  settings: Settings,
+};
 
-/**
- * The primary action, rendered between the two nav items on the bottom bar.
- *
- * Logging a transaction is by far the most frequent thing a user does here, so
- * it gets the centre and a full tap target rather than being buried in a menu.
- */
-export const NAV_CENTER = {
-  href: "/transactions/new",
-  label: "Add a transaction",
-} as const;
+/** The tab bar, with icons resolved. */
+export const NAV_ITEMS = MODEL_NAV_ITEMS.map((entry) => ({
+  ...entry,
+  Icon: ICONS[entry.Icon],
+}));
 
-/** True when `pathname` is inside the route `href` points at. */
-export function isActivePath(pathname: string, href: string) {
-  if (href === "/") return pathname === "/";
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
+/** `MORE_SCREENS` from the model, with icons resolved. */
+export const MORE_SCREENS = MODEL_MORE_SCREENS.map((group) => ({
+  ...group,
+  items: group.items.map((item) => ({ ...item, Icon: ICONS[item.Icon] })),
+}));
+
+export { ALL_APP_ROUTES, isActivePath, MAX_NAV_SLOTS, NAV_CENTER } from "@/lib/nav-model";

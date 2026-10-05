@@ -67,17 +67,21 @@ export { createGoals, contributeToGoal, type GoalWithProgress } from "./goals";
 export {
   confirmOccurrence,
   createRecurring,
+  deleteRule,
   hasPending,
   listOccurrences,
+  listRules,
   listUpcoming,
   OCCURRENCE_HORIZON_DAYS,
   skipOccurrence,
   summariseUpcoming,
   syncAllRules,
   syncRule,
+  setRuleActive,
   UPCOMING_WINDOW_DAYS,
   type NewRecurring,
   type OccurrenceRow,
+  type RuleRow,
 } from "./occurrences";
 
 export {

@@ -26,14 +26,8 @@ export default function BottomNav() {
 
   if (status !== "unlocked") return null;
 
-  function tab(
-    entry: (typeof NAV_ITEMS)[number],
-    side: "left" | "right",
-  ) {
+  function tab(entry: (typeof NAV_ITEMS)[number]) {
     const active = isActivePath(pathname, entry.href);
-    // Short labels keep the bar legible at phone widths; the full name stays in
-    // the aria-label so a screen reader is unaffected.
-    const label = side === "right" ? entry.label.slice(0, 3) : entry.label;
 
     return (
       <li key={entry.href} className="flex-1">
@@ -42,18 +36,19 @@ export default function BottomNav() {
           aria-current={active ? "page" : undefined}
           aria-label={entry.label}
           className={cn(
-            "flex min-h-12 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-1.5",
+            // min-h-12 keeps the tap target at 48px. The bar is five slots wide
+            // and no more, so the labels are left as real words rather than
+            // truncated: "Act" and "Rep" are not navigation, they are guessing.
+            "flex min-h-12 min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-1.5",
             "text-[11px] font-medium transition-colors",
-            active
-              ? "text-primary"
-              : "text-muted-foreground hover:text-foreground active:bg-accent",
+            active ? "text-primary" : "text-muted-foreground hover:text-foreground active:bg-accent",
           )}
         >
           <entry.Icon
-            className={cn("size-5 transition-transform", active && "scale-110")}
+            className={cn("size-5 shrink-0 transition-transform", active && "scale-110")}
             aria-hidden="true"
           />
-          {label}
+          <span className="max-w-full truncate">{entry.label}</span>
         </Link>
       </li>
     );
@@ -67,10 +62,10 @@ export default function BottomNav() {
          indicator instead of sitting underneath it. */
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
+      {/* Two tabs, the button, two tabs. Fixed at five slots so the button stays
+          centred and every target stays wide enough to hit. */}
       <ul className="mx-auto flex max-w-md items-stretch justify-around gap-0.5 px-2 pt-1.5 pb-1">
-        {/* Only the first tab goes left of the button; the rest share the right,
-            so the button stays visually centred regardless of item count. */}
-        {NAV_ITEMS[0] && tab(NAV_ITEMS[0], "left")}
+        {NAV_ITEMS.slice(0, 2).map((entry) => tab(entry))}
 
         {/* Lifted above the bar's top edge so it reads as the primary action
             rather than another tab. */}
@@ -89,7 +84,7 @@ export default function BottomNav() {
           </Link>
         </li>
 
-        {NAV_ITEMS.slice(1).map((entry) => tab(entry, "right"))}
+        {NAV_ITEMS.slice(2).map((entry) => tab(entry))}
       </ul>
     </nav>
   );

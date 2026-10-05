@@ -207,6 +207,107 @@ export async function skipOccurrence(
   ]);
 }
 
+/** A rule as the management screen shows it, with the next thing it will ask for. */
+export type RuleRow = {
+  id: string;
+  name: string | null;
+  amount: number | null;
+  type: TransactionType | null;
+  accountId: string | null;
+  accountName: string | null;
+  categoryName: string | null;
+  frequency: RecurringFrequency;
+  anchor: MonthlyAnchor;
+  dayOfMonth: number;
+  isActive: number;
+  nextDueDate: string;
+  /** Pending occurrences this rule still owes, for the "3 coming up" line. */
+  pending: number;
+  /** True when the rule predates v5 and has no template to generate from. */
+  incomplete: boolean;
+};
+
+/** Every rule for a profile, active first, then by how soon it is due. */
+export async function listRules(db: LocalDb, profileId: string): Promise<RuleRow[]> {
+  const rows = await db.query<Omit<RuleRow, "incomplete">>(
+    `SELECT r.id, r.name, r.amount, r.tx_type AS type, r.account_id AS accountId,
+            a.name AS accountName, c.name AS categoryName,
+            r.frequency, r.anchor, r.day_of_month AS dayOfMonth,
+            r.is_active AS isActive, r.next_due_date AS nextDueDate,
+            (SELECT COUNT(*) FROM planned_occurrences p
+              WHERE p.rule_id = r.id AND p.status = 'pending' AND p.deleted_at IS NULL) AS pending
+       FROM recurring_transactions r
+       LEFT JOIN accounts a ON a.id = r.account_id
+       LEFT JOIN categories c ON c.id = r.category_id
+      WHERE r.profile_id = ? AND r.deleted_at IS NULL
+      ORDER BY r.is_active DESC, r.next_due_date ASC`,
+    [profileId],
+  );
+
+  return rows.map((row) => ({
+    ...row,
+    // Matches the guard in syncRule: a rule with no template cannot generate
+    // anything, and saying so is better than showing a date that never arrives.
+    incomplete: !row.accountId || row.name === null || row.amount === null || !row.type,
+  }));
+}
+
+/**
+ * Stops a rule generating anything further.
+ *
+ * `is_active` rather than deleting, because the occurrences already generated
+ * stay on the dashboard until they are paid or skipped, and the paid history
+ * stays attached to this rule. Deleting the row instead would orphan both.
+ *
+ * Occurrences already in flight are left alone deliberately: someone pausing rent
+ * because they moved out still has to pay this month's rent.
+ */
+export async function setRuleActive(
+  db: LocalDb,
+  profileId: string,
+  ruleId: string,
+  isActive: boolean,
+): Promise<void> {
+  const timestamp = nowIso();
+  await db.batch([
+    {
+      sql: `UPDATE recurring_transactions
+             SET is_active = ?, updated_at = ?
+           WHERE id = ? AND profile_id = ? AND deleted_at IS NULL`,
+      bind: [isActive ? 1 : 0, timestamp, ruleId, profileId],
+    },
+  ]);
+}
+
+/**
+ * Removes a rule and everything still pending for it.
+ *
+ * Distinct from pausing: this is for a rule that was a mistake. Occurrences are
+ * tombstoned rather than deleted so the same table still holds no rows a sync
+ * could resurrect.
+ */
+export async function deleteRule(
+  db: LocalDb,
+  profileId: string,
+  ruleId: string,
+): Promise<void> {
+  const timestamp = nowIso();
+  await db.batch([
+    {
+      sql: `UPDATE planned_occurrences
+             SET deleted_at = ?, updated_at = ?
+           WHERE rule_id = ? AND profile_id = ? AND deleted_at IS NULL`,
+      bind: [timestamp, timestamp, ruleId, profileId],
+    },
+    {
+      sql: `UPDATE recurring_transactions
+             SET deleted_at = ?, is_active = 0, updated_at = ?
+           WHERE id = ? AND profile_id = ? AND deleted_at IS NULL`,
+      bind: [timestamp, timestamp, ruleId, profileId],
+    },
+  ]);
+}
+
 /**
  * Records money as having moved, and closes the occurrence.
  *

@@ -30,6 +30,8 @@ const ROUTES: readonly { path: string; expect: RegExp }[] = [
   { path: "/onboarding/categories", expect: renders("How do you want to sort your spending?") },
   { path: "/onboarding/budget", expect: renders("Do you want to set a first budget?") },
   { path: "/recurring/new", expect: renders("Set up repeating money") },
+  { path: "/recurring", expect: renders("Repeating money") },
+  { path: "/more", expect: renders("More", "Accounts", "Settings") },
   // The dashboard and everything behind the gate redirect to profile creation when
   // this browser has no profile yet, so the sign-in screen is the correct thing to
   // be here. Asserting on the dashboard's own copy would fail on a clean profile
