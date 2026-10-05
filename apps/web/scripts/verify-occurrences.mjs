@@ -146,7 +146,9 @@ function test(name, fn) {
 
 test("a fresh database reaches the current schema version", (db) => {
   migrate(db);
-    assert.equal(db.selectValue("PRAGMA user_version"), SCHEMA_VERSION);
+  assert.equal(db.selectValue("PRAGMA user_version"), SCHEMA_VERSION);
+  const columns = rows(db, "PRAGMA table_info(recurring_transactions)").map((row) => row.name);
+  assert.ok(columns.includes("profile_id"), "recurring rules must store their owner");
 });
 
 test("the planned_occurrences table and its indexes exist", (db) => {
@@ -154,7 +156,12 @@ test("the planned_occurrences table and its indexes exist", (db) => {
   const tables = objectsOf(db, "SELECT name FROM sqlite_master WHERE type = 'table'");
   assert.ok(tables.includes("planned_occurrences"), "table missing");
   const indexes = objectsOf(db, "SELECT name FROM sqlite_master WHERE type = 'index'");
-  for (const name of ["idx_planned_pending", "idx_planned_rule", "idx_planned_rule_due"]) {
+  for (const name of [
+    "idx_planned_pending",
+    "idx_planned_rule",
+    "idx_planned_rule_due",
+    "idx_recurring_profile",
+  ]) {
     assert.ok(indexes.includes(name), `missing index ${name}`);
   }
 });
@@ -523,7 +530,10 @@ test("v5 still rejected a null transaction_id, which is why v6 exists", (db) => 
   // Pinning the old behaviour, so a future "simplification" that drops the
   // rebuild cannot look like a harmless cleanup: the constraint it removed was
   // what made rule creation impossible.
-  migrate(db, SCHEMA_VERSION - 1);
+  // Keep this fixture on the actual v5 schema. Later migrations deliberately
+  // remove this constraint, so deriving the version from the current schema
+  // would silently test a different layout after every schema addition.
+  migrate(db, 5);
   seedProfile(db);
   const ts = now();
   assert.throws(
@@ -539,5 +549,3 @@ test("v5 still rejected a null transaction_id, which is why v6 exists", (db) => 
 });
 
 console.log(`\n${passed} occurrence database checks passed`);
-
-

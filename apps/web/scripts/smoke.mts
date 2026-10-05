@@ -31,6 +31,9 @@ const ROUTES: readonly { path: string; expect: RegExp }[] = [
   { path: "/onboarding/budget", expect: renders("Do you want to set a first budget?") },
   { path: "/recurring/new", expect: renders("Set up repeating money") },
   { path: "/recurring", expect: renders("Repeating money") },
+  // This protected route shows the edit fallback when a profile is unlocked,
+  // and the sign-in gate in a clean browser. Both are valid outcomes.
+  { path: "/recurring/not-a-real-id/edit", expect: /Edit this one|Sign In/s },
   { path: "/more", expect: renders("More", "Accounts", "Settings") },
   // The dashboard and everything behind the gate redirect to profile creation when
   // this browser has no profile yet, so the sign-in screen is the correct thing to
@@ -212,7 +215,10 @@ if (barPresent) {
   await addButton.click();
 
   // The question, asked before any form is shown.
-  const dialog = small.locator('[role="dialog"]');
+  const dialog = small.locator('[role="dialog"][aria-labelledby="add-transaction-title"]');
+  await small.waitForSelector('[role="dialog"][aria-labelledby="add-transaction-title"]', {
+    timeout: 5_000,
+  });
   check("pressing it asks which kind of transaction", (await dialog.count()) === 1);
   check(
     "one-off is offered",
@@ -226,7 +232,10 @@ if (barPresent) {
 
   // Escape closes it, and closing must not leave the user anywhere new.
   await small.keyboard.press("Escape");
-  await small.waitForTimeout(300);
+  await small.waitForSelector('[role="dialog"][aria-labelledby="add-transaction-title"]', {
+    state: "detached",
+    timeout: 5_000,
+  });
   check("Escape closes the chooser", (await dialog.count()) === 0);
   check("and stays put", !small.url().includes("/transactions/new"), small.url());
 
@@ -244,4 +253,3 @@ await browser.close();
 
 console.log(failures === 0 ? "\nsmoke: all checks passed" : `\nsmoke: ${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);
-

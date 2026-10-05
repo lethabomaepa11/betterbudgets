@@ -95,13 +95,12 @@ Run standalone Node/Bun tools that use Varlock from the owning app directory so 
 
 ### Alchemy
 
-- Target: Axiom observability
 - Configure provider accounts: `cd packages/infra && pnpm exec alchemy profile edit`
 - Dev: pnpm run dev
 - Deploy: pnpm run deploy:infra
 - Destroy: pnpm run destroy
 
-`alchemy profile edit` stores the selected Axiom, Cloudflare, Neon, PlanetScale, and/or Prisma provider profiles under `~/.alchemy`; no provider-specific setup command is required by this scaffold.
+`alchemy profile edit` stores selected infrastructure provider profiles under `~/.alchemy`; no provider-specific setup command is required by this scaffold.
 
 Deploys are staged and default to a personal `dev_<username>` stage. For production, run the deploy with an explicit stage from `packages/infra`:
 
@@ -109,8 +108,6 @@ Deploys are staged and default to a personal `dev_<username>` stage. For product
 cd packages/infra && pnpm exec alchemy deploy --stage production
 ```
 
-Alchemy creates a stage-specific Axiom dataset and a least-privilege ingest token. `dev` injects the credentials into the observed apps without writing the token to an env file.
-For a deployed Docker image, pass `AXIOM_API_KEY`, `AXIOM_DATASET`, and `AXIOM_EDGE_URL` through the target platform's secret manager. Local observed development runs through Alchemy with the credentials injected in memory.
 
 ### Docker Compose
 
