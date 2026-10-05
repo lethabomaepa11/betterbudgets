@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "buildCommand": "pnpm --filter server build",
+  "builds": [
+    {
+      "src": "apps/server/dist/index.mjs",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "apps/server/dist/index.mjs"
+    }
+  ]
+}
