@@ -3,7 +3,7 @@
   "buildCommand": "pnpm --filter server build",
   "builds": [
     {
-      "src": "apps/server/dist/index.mjs",
+      "src": "api/index.js",
       "use": "@vercel/node"
     }
   ],
