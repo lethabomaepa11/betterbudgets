@@ -1,2 +1,2 @@
 import "varlock/auto-load";
-export { ENV } from "./env";
+export { ENV } from "./env.js";

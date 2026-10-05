@@ -9,8 +9,8 @@ import type { Context, MiddlewareHandler } from "hono";
 import type { Prisma } from "@betterbudgets/db";
 import { z } from "zod";
 
-import { ENV } from "./env.server";
-import { auth, db } from "./services";
+import { ENV } from "./env.server.js";
+import { auth, db } from "./services.js";
 
 initLogger({
   env: { service: "betterbudgets-server" },
@@ -283,12 +283,16 @@ app.get("/", (c) => {
 
 import { serve } from "@hono/node-server";
 
-serve(
-  {
-    fetch: app.fetch,
-    port: 3000,
-  },
-  (info) => {
-    console.log(`Server is running on http://localhost:${info.port}`);
-  },
-);
+export default app;
+
+if (!process.env.VERCEL) {
+  serve(
+    {
+      fetch: app.fetch,
+      port: 3000,
+    },
+    (info) => {
+      console.log(`Server is running on http://localhost:${info.port}`);
+    },
+  );
+}
