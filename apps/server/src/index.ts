@@ -31,6 +31,10 @@ function requestKey(c: Context) {
   return c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "unknown";
 }
 
+function requestHeaders(c: Context) {
+  return new Headers(c.req.header());
+}
+
 function rateLimit(max: number): MiddlewareHandler {
   return async (c, next) => {
     const now = Date.now();
@@ -97,7 +101,7 @@ app.use(evlog());
 app.use("*", secureHeaders());
 app.use("*", bodyLimit({ maxSize: 512 * 1024 }));
 app.use("*", async (c, next) => {
-  await identifyUser(c.get("log"), c.req.raw.headers, c.req.path);
+  await identifyUser(c.get("log"), requestHeaders(c), c.req.path);
   await next();
 });
 
@@ -115,7 +119,7 @@ app.on(["POST", "GET"], "/api/auth/*", async (c) => auth.handler(c.req.raw));
 
 app.use("/api/sync/*", rateLimit(30));
 app.post("/api/sync/push", async (c) => {
-  const userId = await auth.api.getSession({ headers: c.req.raw.headers }).then((session) => session?.user.id ?? null);
+  const userId = await auth.api.getSession({ headers: requestHeaders(c) }).then((session) => session?.user.id ?? null);
   if (!userId) return c.json({ error: "Sign in to sync your budget." }, 401);
 
   const parsed = syncPushSchema.safeParse(await c.req.json().catch(() => null));
@@ -181,7 +185,7 @@ app.post("/api/sync/push", async (c) => {
 });
 
 app.get("/api/sync/pull", async (c) => {
-  const userId = await auth.api.getSession({ headers: c.req.raw.headers }).then((session) => session?.user.id ?? null);
+  const userId = await auth.api.getSession({ headers: requestHeaders(c) }).then((session) => session?.user.id ?? null);
   if (!userId) return c.json({ error: "Sign in to sync your budget." }, 401);
 
   const after = Number(c.req.query("after") ?? "0");

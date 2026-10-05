@@ -48,13 +48,17 @@
     "CI",
     "CORS_ORIGIN",
     "DATABASE_URL",
+    "DATABASE_URL_DIRECT",
     "EXPO_PUBLIC_SERVER_URL",
+    "GROQ_API_KEY",
+    "GROQ_MODEL",
     "NEXT_PUBLIC_SERVER_URL",
     "NODE_ENV",
     "VERCEL",
     "VERCEL_ENV",
     "VERCEL_PROJECT_PRODUCTION_URL",
     "VERCEL_URL",
+    "PUBLIC_POSTGRES_CLAIM_URL",
     "_VARLOCK_ENV_KEY"
   ],
   "globalDependencies": [".env*", "apps/*/.env*", "packages/*/.env*"]
