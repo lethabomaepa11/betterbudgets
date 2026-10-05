@@ -27,7 +27,7 @@ export default function DownloadPage() {
             <CardDescription>
               Download the official iOS app when it is available in your region.
             </CardDescription>
-            <Button className="mt-2" disabled={!IOS_URL} render={IOS_URL ? <a href={IOS_URL} target="_blank" rel="noreferrer" /> : undefined}>
+            <Button nativeButton={false} className="mt-2" disabled={!IOS_URL} render={IOS_URL ? <a href={IOS_URL} target="_blank" rel="noreferrer" /> : <span />}>
               <Download data-icon="inline-start" /> App Store
             </Button>
           </CardHeader>
@@ -39,7 +39,7 @@ export default function DownloadPage() {
             <CardDescription>
               Download the official Android app when it is available in your region.
             </CardDescription>
-            <Button className="mt-2" disabled={!ANDROID_URL} render={ANDROID_URL ? <a href={ANDROID_URL} target="_blank" rel="noreferrer" /> : undefined}>
+            <Button nativeButton={false} className="mt-2" disabled={!ANDROID_URL} render={ANDROID_URL ? <a href={ANDROID_URL} target="_blank" rel="noreferrer" /> : <span />}>
               <Download data-icon="inline-start" /> Google Play
             </Button>
           </CardHeader>
@@ -51,7 +51,7 @@ export default function DownloadPage() {
           Store links will appear here once the mobile release is published.
         </p>
       )}
-      <Button variant="outline" render={<Link href="/dashboard" />}>
+      <Button nativeButton={false} variant="outline" render={<Link href="/dashboard" />}>
         <ExternalLink data-icon="inline-start" /> Continue in browser
       </Button>
     </div>

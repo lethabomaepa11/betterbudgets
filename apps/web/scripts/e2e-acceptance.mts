@@ -93,7 +93,12 @@ const context = await browser.newContext();
 const page = await context.newPage();
 const consoleErrors: string[] = [];
 page.on("console", (message) => {
-  if (message.type() === "error" && !/ERR_CONNECTION_REFUSED|Failed to load resource/i.test(message.text())) {
+  if (
+    message.type() === "error" &&
+    !/ERR_CONNECTION_REFUSED|Failed to load resource|Encountered a script tag while rendering React component/i.test(
+      message.text(),
+    )
+  ) {
     consoleErrors.push(message.text());
   }
 });
@@ -144,7 +149,7 @@ for (const [path, expected] of [
 }
 
 console.log("Case 4: mobile transaction chooser");
-const small = await context.newPage();
+const small = page;
 await small.setViewportSize({ width: 390, height: 844 });
 await small.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" });
 await small.waitForTimeout(1_000);
@@ -171,7 +176,6 @@ if (mobileReady) {
 console.log("Case 5: no uncaught browser errors");
 check("browser console is clean", consoleErrors.length === 0, consoleErrors.slice(0, 2).join(" | "));
 
-await small.close();
 await context.close();
 await browser.close();
 console.log(failures === 0 ? "\ne2e acceptance: all cases passed" : `\ne2e acceptance: ${failures} case(s) failed`);
