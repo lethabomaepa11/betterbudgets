@@ -3,6 +3,7 @@ import { Card, Chip, useThemeColor } from "heroui-native";
 import { Text, View, Pressable } from "react-native";
 
 import { Container } from "@/components/container";
+import { LogoLockup } from "@/components/logo";
 import { SignIn } from "@/components/sign-in";
 import { SignUp } from "@/components/sign-up";
 import { authClient } from "@/lib/auth-client";
@@ -18,7 +19,7 @@ export default function Home() {
   return (
     <Container className="p-6">
       <View className="py-4 mb-6">
-        <Text className="text-4xl font-bold text-foreground mb-2">BETTER T STACK</Text>
+        <LogoLockup width={220} className="mb-4 items-start" />
       </View>
 
       {session?.user ? (

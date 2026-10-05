@@ -1,27 +1,18 @@
-import { headers } from "next/headers";
-import { redirect } from "next/navigation";
+import type { Metadata } from "next";
 
-import { authClient } from "@/lib/auth-client";
+import VaultGate from "@/components/vault/gate";
 
 import Dashboard from "./dashboard";
 
-export default async function DashboardPage() {
-  const session = await authClient.getSession({
-    fetchOptions: {
-      headers: await headers(),
-      throw: true,
-    },
-  });
+export const metadata: Metadata = {
+  title: "Home",
+};
 
-  if (!session?.user) {
-    redirect("/login");
-  }
-
+/** The app shell. `VaultGate` decides first-run, locked, or the real screen. */
+export default function DashboardPage() {
   return (
-    <div>
-      <h1>Dashboard</h1>
-      <p>Welcome {session.user.name}</p>
-      <Dashboard session={session} />
-    </div>
+    <VaultGate>
+      <Dashboard />
+    </VaultGate>
   );
 }

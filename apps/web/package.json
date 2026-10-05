@@ -3,14 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build",
+    "build": "node scripts/copy-sqlite-wasm.mjs && next build",
     "check-types": "tsc --noEmit",
     "start": "next start",
-    "dev:bare": "next dev --port 3001",
-    "env:generate": "varlock codegen"
+    "dev:bare": "node scripts/copy-sqlite-wasm.mjs && next dev --port 3001",
+    "env:generate": "varlock codegen",
+    "test": "pnpm run test:unit && pnpm run test:db",
+    "test:unit": "node --experimental-strip-types scripts/run-unit-tests.mts",
+    "test:db": "node scripts/verify-occurrences.mjs",
+    "test:browser": "node --experimental-strip-types scripts/smoke.mts"
   },
   "dependencies": {
     "@betterbudgets/ui": "workspace:*",
+    "@sqlite.org/sqlite-wasm": "3.53.4-build1",
     "@swc/helpers": "^0.5.23",
     "@tanstack/react-form": "catalog:",
     "@varlock/nextjs-integration": "1.2.2",
@@ -32,6 +37,7 @@
     "@types/node": "catalog:",
     "@types/react": "^19.2.18",
     "@types/react-dom": "catalog:",
+    "playwright": "^1.63.0",
     "tailwindcss": "catalog:",
     "typescript": "^6.0.3"
   }

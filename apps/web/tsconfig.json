@@ -22,7 +22,12 @@
     "paths": {
       "@/*": ["./src/*"],
       "@betterbudgets/ui/*": ["../../packages/ui/src/*"]
-    }
+    },
+    // The unit tests import siblings with an explicit `.ts` extension so bare
+    // Node can load them (see scripts/run-unit-tests.mts). Turbopack must not see
+    // them: it resolves those paths to the app's bundler conventions, and they
+    // are not part of the app graph.
+    "allowImportingTsExtensions": true
   },
   "include": [
     "next-env.d.ts",

@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import "../index.css";
+import BottomNav from "@/components/bottom-nav";
 import Header from "@/components/header";
 import Providers from "@/components/providers";
 import PwaRegistration from "@/components/pwa-registration";
@@ -17,8 +18,29 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "betterbudgets",
-  description: "betterbudgets",
+  title: {
+    default: "betterbudgets",
+    template: "%s · betterbudgets",
+  },
+  description: "Local-first budgeting that works offline and syncs when you want it to.",
+  applicationName: "betterbudgets",
+  appleWebApp: {
+    capable: true,
+    title: "betterbudgets",
+    statusBarStyle: "default",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  /* `cover` is what makes `env(safe-area-inset-*)` return real values; the
+     bottom tab bar relies on it to clear the iOS home indicator. */
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#FAFAFC" },
+    { media: "(prefers-color-scheme: dark)", color: "#0B0D12" },
+  ],
 };
 
 export default function RootLayout({
@@ -32,10 +54,13 @@ export default function RootLayout({
         <PwaRegistration />
 
         <Providers>
-          <div className="grid grid-rows-[auto_1fr] h-svh">
+          <div className="grid min-h-svh grid-rows-[auto_1fr]">
             <Header />
-            {children}
+            {/* `pb-24` reserves room for the fixed bottom tab bar on small
+                screens; `md:pb-10` restores normal spacing once it disappears. */}
+            <main className="mx-auto w-full max-w-5xl px-4 py-6 pb-24 md:pb-10">{children}</main>
           </div>
+          <BottomNav />
         </Providers>
       </body>
     </html>

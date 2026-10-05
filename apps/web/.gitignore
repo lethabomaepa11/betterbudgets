@@ -22,6 +22,9 @@
 .tanstack/
 .nitro/
 
+# Generated: copied out of node_modules by scripts/copy-sqlite-wasm.mjs
+/public/sqlite3.wasm
+
 # Deployment
 .vercel
 .netlify
