@@ -9,8 +9,8 @@ import type { Context, MiddlewareHandler } from "hono";
 import type { Prisma } from "@betterbudgets/db";
 import { z } from "zod";
 
-import { ENV } from "./env.server.js";
-import { auth, db } from "./services.js";
+import { ENV } from "./env.server";
+import { auth, db } from "./services";
 
 initLogger({
   env: { service: "betterbudgets-server" },
