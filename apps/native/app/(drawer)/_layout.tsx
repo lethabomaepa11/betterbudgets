@@ -66,6 +66,40 @@ function DrawerLayout() {
           ),
         }}
       />
+      <Drawer.Screen
+        name="scan"
+        options={{
+          title: "Scan transfer QR",
+          drawerLabel: "Scan transfer QR",
+          drawerIcon: ({ size, color }) => (
+            <Ionicons name="qr-code-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Drawer.Screen
+        name="accounts"
+        options={{
+          title: "Accounts",
+          drawerLabel: "Accounts",
+          drawerIcon: ({ size, color }) => <Ionicons name="wallet-outline" size={size} color={color} />,
+        }}
+      />
+      <Drawer.Screen
+        name="transactions"
+        options={{
+          title: "Transactions",
+          drawerLabel: "Transactions",
+          drawerIcon: ({ size, color }) => <Ionicons name="receipt-outline" size={size} color={color} />,
+        }}
+      />
+      <Drawer.Screen
+        name="plans"
+        options={{
+          title: "Plans & recurring",
+          drawerLabel: "Plans & recurring",
+          drawerIcon: ({ size, color }) => <Ionicons name="calendar-outline" size={size} color={color} />,
+        }}
+      />
     </Drawer>
   );
 }

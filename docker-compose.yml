@@ -17,9 +17,7 @@ services:
       - path: apps/web/.env
         required: false
     environment:
-      AXIOM_API_KEY: ${AXIOM_API_KEY:?Set AXIOM_API_KEY}
-      AXIOM_DATASET: ${AXIOM_DATASET:?Set AXIOM_DATASET}
-      AXIOM_EDGE_URL: ${AXIOM_EDGE_URL:?Set AXIOM_EDGE_URL}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
       SERVER_URL: http://server:3000
       NEXT_PUBLIC_SERVER_URL: http://server:3000
     depends_on:
@@ -53,9 +51,7 @@ services:
       - path: apps/server/.env
         required: false
     environment:
-      AXIOM_API_KEY: ${AXIOM_API_KEY:?Set AXIOM_API_KEY}
-      AXIOM_DATASET: ${AXIOM_DATASET:?Set AXIOM_DATASET}
-      AXIOM_EDGE_URL: ${AXIOM_EDGE_URL:?Set AXIOM_EDGE_URL}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
       CORS_ORIGIN: http://localhost:3001
     healthcheck:
       test:
@@ -63,7 +59,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://localhost:3000/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+          "fetch('http://localhost:3000/health/ready').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
         ]
       interval: 10s
       timeout: 5s

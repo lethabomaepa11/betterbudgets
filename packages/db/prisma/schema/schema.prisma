@@ -8,3 +8,36 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+model SyncRecord {
+  id        String   @id
+  userId    String
+  entity    String
+  entityId  String
+  payload   Json
+  deleted   Boolean  @default(false)
+  revision  Int
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, entity, entityId])
+  @@index([userId, revision])
+  @@map("sync_record")
+}
+
+model SyncChange {
+  id          String   @id
+  userId      String
+  operationId String
+  entity      String
+  entityId    String
+  payload     Json
+  deleted     Boolean  @default(false)
+  revision    Int
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, operationId])
+  @@index([userId, revision])
+  @@map("sync_change")
+}

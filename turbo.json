@@ -43,9 +43,6 @@
     }
   },
   "globalEnv": [
-    "AXIOM_API_KEY",
-    "AXIOM_DATASET",
-    "AXIOM_EDGE_URL",
     "BETTER_AUTH_SECRET",
     "BETTER_AUTH_URL",
     "CI",
