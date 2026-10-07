@@ -1,7 +1,7 @@
 {
   "version": 2,
   "framework": "nextjs",
-  "buildCommand": "pnpm --filter web build",
+  "buildCommand": "pnpm --filter @betterbudgets/db db:generate && pnpm --filter web build",
   "devCommand": "pnpm --filter web dev:bare",
   "installCommand": "pnpm install",
   "regions": ["iad1"],
