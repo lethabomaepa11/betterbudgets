@@ -550,6 +550,27 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
   [
     `ALTER TABLE recurring_transactions ADD COLUMN end_date TEXT`,
   ],
+
+  // --- 12: support transfers in recurring rules ---
+  //
+  // A recurring transfer moves money from one account to another (e.g., checking
+  // to savings). The source account is where money leaves, the destination
+  // account is where it arrives. Both are stored on the rule so occurrences
+  // can be generated with the correct legs.
+  [
+    `ALTER TABLE recurring_transactions ADD COLUMN source_account_id TEXT REFERENCES accounts(id) ON DELETE CASCADE`,
+  ],
+
+  // --- 13: add source_account_id to planned_occurrences for transfers ---
+  //
+  // When a recurring transfer generates occurrences, each occurrence needs to
+  // know both the destination account (account_id) and the source account
+  // (source_account_id) so the confirmed transaction has both legs.
+  [
+    `ALTER TABLE planned_occurrences ADD COLUMN source_account_id TEXT REFERENCES accounts(id) ON DELETE CASCADE`,
+    `ALTER TABLE planned_occurrences DROP CONSTRAINT IF EXISTS planned_occurrences_type_check`,
+    `ALTER TABLE planned_occurrences ADD CONSTRAINT planned_occurrences_type_check CHECK (type IN ('inflow', 'outflow', 'transfer'))`,
+  ],
 ];
 
 /**
@@ -609,7 +630,7 @@ export type BudgetPeriod = "weekly" | "monthly";
 export const BUDGET_PERIODS: readonly BudgetPeriod[] = ["weekly", "monthly"];
 
 /** Transaction.Type */
-export type TransactionType = "inflow" | "outflow";
+export type TransactionType = "inflow" | "outflow" | "transfer";
 
 /**
  * How a recurrence picks its day within a month.
@@ -847,6 +868,8 @@ export type RecurringTransaction = {
    * point at and every generated occurrence needs these fields.
    */
   account_id: string | null;
+  /** Source account for transfers (where money leaves). Added in schema v12. */
+  source_account_id: string | null;
   category_id: string | null;
   name: string | null;
   amount: number | null;
@@ -914,6 +937,8 @@ export type PlannedOccurrence = {
   rule_id: string | null;
   profile_id: string;
   account_id: string;
+  /** Source account for transfers (where money leaves). Added in schema v13. */
+  source_account_id: string | null;
   category_id: string | null;
   name: string | null;
   /** Minor units, always non-negative; `type` carries the direction. */

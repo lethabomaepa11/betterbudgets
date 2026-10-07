@@ -35,6 +35,8 @@ export const UPCOMING_WINDOW_DAYS = 21;
 
 export type NewRecurring = {
   accountId: string;
+  /** Source account for transfers (where money leaves). */
+  sourceAccountId?: string | null;
   categoryId?: string | null;
   name: string;
   /** Minor units, always non-negative; `type` carries the direction. */
@@ -76,6 +78,8 @@ export type RuleChanges = {
   /** Minor units. */
   amount?: number;
   accountId?: string;
+  /** Source account for transfers (where money leaves). */
+  sourceAccountId?: string | null;
   categoryId?: string | null;
   frequency?: RecurringFrequency;
   anchor?: MonthlyAnchor;
@@ -199,6 +203,7 @@ export async function updateRule(
   const name = changes.name ?? rule.name;
   const amount = changes.amount ?? rule.amount;
   const accountId = changes.accountId ?? rule.account_id;
+  const sourceAccountId = changes.sourceAccountId === undefined ? rule.source_account_id : changes.sourceAccountId;
   const categoryId = changes.categoryId === undefined ? rule.category_id : changes.categoryId;
   const frequency = changes.frequency ?? rule.frequency;
   const anchor = changes.anchor ?? rule.anchor;
@@ -227,7 +232,7 @@ export async function updateRule(
   const statements: { sql: string; bind: readonly (string | number | null)[] }[] = [
     {
       sql: `UPDATE recurring_transactions
-               SET name = ?, amount = ?, account_id = ?, category_id = ?,
+               SET name = ?, amount = ?, account_id = ?, source_account_id = ?, category_id = ?,
                    frequency = ?, anchor = ?, day_of_month = ?,
                    next_due_date = ?, end_date = ?, updated_at = ?
              WHERE id = ? AND profile_id = ? AND deleted_at IS NULL`,
@@ -235,6 +240,7 @@ export async function updateRule(
         name,
         amount,
         accountId,
+        sourceAccountId,
         categoryId,
         frequency,
         anchor,
@@ -266,9 +272,9 @@ export async function updateRule(
   for (const row of keep) {
     statements.push({
       sql: `UPDATE planned_occurrences
-             SET account_id = ?, category_id = ?, name = ?, amount = ?, updated_at = ?
+             SET account_id = ?, source_account_id = ?, category_id = ?, name = ?, amount = ?, updated_at = ?
            WHERE id = ? AND status = 'pending' AND deleted_at IS NULL`,
-      bind: [accountId, categoryId, name, amount, timestamp, row.id],
+      bind: [accountId, sourceAccountId, categoryId, name, amount, timestamp, row.id],
     });
     updated += 1;
   }
@@ -452,6 +458,8 @@ export type RuleRow = {
   type: TransactionType | null;
   accountId: string | null;
   accountName: string | null;
+  /** Source account for transfers (where money leaves). */
+  sourceAccountId: string | null;
   /** Needed by the edit form: the name alone cannot identify a row. */
   categoryId: string | null;
   categoryName: string | null;
@@ -472,6 +480,7 @@ export type RuleRow = {
 export async function listRules(db: LocalDb, profileId: string): Promise<RuleRow[]> {
   const rows = await db.query<Omit<RuleRow, "incomplete">>(
     `SELECT r.id, r.name, r.amount, r.tx_type AS type, r.account_id AS accountId,
+            r.source_account_id AS sourceAccountId,
             a.name AS accountName, r.category_id AS categoryId, c.name AS categoryName,
             r.frequency, r.anchor, r.day_of_month AS dayOfMonth,
             r.is_active AS isActive, r.next_due_date AS nextDueDate,
@@ -661,6 +670,19 @@ export async function createRecurring(
   );
   if (!account) throw new Error("That account does not belong to this profile.");
 
+  // Validate source account for transfers
+  let sourceAccountId: string | null = null;
+  if (input.type === "transfer" && input.sourceAccountId) {
+    const [sourceAccount] = await db.query<{ id: string }>(
+      `SELECT id FROM accounts
+        WHERE id = ? AND profile_id = ? AND deleted_at IS NULL AND is_archived = 0`,
+      [input.sourceAccountId, profileId],
+    );
+    if (!sourceAccount) throw new Error("That source account does not belong to this profile.");
+    if (sourceAccount.id === input.accountId) throw new Error("Source and destination accounts must be different.");
+    sourceAccountId = sourceAccount.id;
+  }
+
   if (input.categoryId) {
     const [category] = await db.query<{ id: string; kind: "income" | "expense" }>(
       `SELECT id, kind FROM categories
@@ -684,9 +706,9 @@ export async function createRecurring(
     {
       sql: `INSERT INTO recurring_transactions
               (id, transaction_id, profile_id, frequency, anchor, day_of_month, is_active,
-               next_due_date, account_id, category_id, name, amount, tx_type, end_date,
+               next_due_date, account_id, source_account_id, category_id, name, amount, tx_type, end_date,
                created_at, updated_at, origin)
-            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local')`,
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local')`,
       bind: [
         ruleId,
         // No transaction yet — that is the point. Occurrences are only written
@@ -699,6 +721,7 @@ export async function createRecurring(
         date,
         input.startsOn,
         input.accountId,
+        sourceAccountId,
         input.categoryId ?? null,
         input.name,
         input.amount,
@@ -742,6 +765,9 @@ export async function syncRule(
   // A v4 rule has no template columns; it cannot generate anything without them.
   if (!rule.account_id || rule.name === null || rule.amount === null || !rule.tx_type) return 0;
 
+  // For transfers, also require source_account_id
+  if (rule.tx_type === "transfer" && !rule.source_account_id) return 0;
+
   const recurrenceRule = {
     frequency: rule.frequency,
     anchor: rule.anchor,
@@ -774,17 +800,18 @@ export async function syncRule(
     // (the loop walks dates in ascending order).
     if (rule.end_date && cursor > rule.end_date) break;
     if (!seen.has(cursor)) {
-      statements.push({
+statements.push({
         sql: `INSERT OR IGNORE INTO planned_occurrences
-                (id, rule_id, profile_id, account_id, category_id, name, amount, type,
+                (id, rule_id, profile_id, account_id, source_account_id, category_id, name, amount, type,
                  due_on, status, paid_transaction_id, settled_on,
                  created_at, updated_at, origin)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, ?, ?, 'local')`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, ?, ?, 'local')`,
         bind: [
           crypto.randomUUID(),
           ruleId,
           profileId,
           rule.account_id,
+          rule.source_account_id,
           rule.category_id,
           rule.name,
           rule.amount,

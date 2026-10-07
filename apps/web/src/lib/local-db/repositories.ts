@@ -31,6 +31,8 @@ export type NewTransaction = {
   categoryId?: string | null;
   /** Added in schema v4. Free-form, never grouped in reports. */
   notes?: string | null;
+  /** Optional link to a recurring occurrence rule. */
+  recurringId?: string | null;
 };
 
 export type MonthlyTotals = {
@@ -638,7 +640,7 @@ export function createLedger(db: LocalDb) {
         updated_at: timestamp,
         deleted_at: null,
         origin: "local",
-        recurring_id: null,
+        recurring_id: input.recurringId ?? null,
         category_id: input.categoryId ?? null,
         notes: input.notes ?? null,
       };
@@ -647,8 +649,8 @@ export function createLedger(db: LocalDb) {
         {
           sql: `INSERT INTO transactions
                   (id, account_id, source_account_id, name, amount, type, is_allowance,
-                   occurred_on, created_at, updated_at, origin, category_id, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                   occurred_on, created_at, updated_at, origin, category_id, notes, recurring_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           bind: [
             row.id,
             row.account_id,
@@ -663,6 +665,7 @@ export function createLedger(db: LocalDb) {
             row.origin,
             row.category_id,
             row.notes,
+            row.recurring_id,
           ],
         },
         outboxStatement("transactions", row.id, row),

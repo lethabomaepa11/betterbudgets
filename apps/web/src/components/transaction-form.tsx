@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 
 import { Button } from "@betterbudgets/ui/components/button";
 import { useLocalDb } from "@/lib/local-db/provider";
-import { parseMoney, today, type TransactionType } from "@/lib/local-db";
+import { parseMoney, today, type TransactionType, type OccurrenceRow } from "@/lib/local-db";
 import { useVault } from "@/lib/local-db/vault";
 
 import CalendarPicker from "@/components/calendar-picker";
@@ -19,6 +19,8 @@ const TONE: Record<TransactionType, string> = {
   outflow: "bg-expense-subtle text-expense-strong",
   /** "Money in" — salary, a refund, anything that arrived. */
   inflow: "bg-income-subtle text-income-strong",
+  /** "Transfer" — moving money between accounts. */
+  transfer: "bg-primary-subtle text-primary-strong",
 };
 
 const FIELD_CLASS =
@@ -44,15 +46,20 @@ export type EditableTransaction = {
  * splitting them means two places to change every time the model does. When
  * `transaction` is supplied it edits that row in place; otherwise it creates one.
  * `onDone` decides where the user lands afterwards.
+ * When `occurrence` is supplied, the form is prefilled with the occurrence's
+ * details and the transaction will be linked to that recurring occurrence.
  */
 export default function TransactionForm({
   transaction,
+  occurrence,
   accounts,
   defaultAccountId,
   onDone,
 }: {
   /** Present when editing. Omit to create. */
   transaction?: EditableTransaction;
+  /** Prefill and link to a recurring occurrence. */
+  occurrence?: OccurrenceRow;
   accounts: { id: string; name: string }[];
   defaultAccountId?: string;
   onDone: () => void;
@@ -66,23 +73,23 @@ export default function TransactionForm({
   // `outflow` (not "expense") is the model's word for money leaving; the UI says
   // "Money out" so the user never has to learn the database's vocabulary.
   const [type, setType] = useState<TransactionType>(
-    transaction?.type ?? "outflow",
+    transaction?.type ?? occurrence?.type ?? "outflow",
   );
-  const [isTransfer, setIsTransfer] = useState(Boolean(transaction?.source_account_id));
+  const [isTransfer, setIsTransfer] = useState(Boolean(transaction?.source_account_id) || Boolean(occurrence?.source_account_id));
   const [categoryId, setCategoryId] = useState<string>(
-    transaction?.category_id ?? "",
+    transaction?.category_id ?? occurrence?.category_id ?? "",
   );
   const [amount, setAmount] = useState(
-    transaction ? (transaction.amount / 100).toFixed(2) : "",
+    transaction ? (transaction.amount / 100).toFixed(2) : occurrence ? (occurrence.amount / 100).toFixed(2) : "",
   );
-  const [name, setName] = useState(transaction?.name ?? "");
+  const [name, setName] = useState(transaction?.name ?? occurrence?.name ?? "");
   const [accountId, setAccountId] = useState(
-    transaction?.account_id ?? defaultAccountId ?? accounts[0]?.id ?? "",
+    transaction?.account_id ?? occurrence?.account_id ?? defaultAccountId ?? accounts[0]?.id ?? "",
   );
   const [sourceAccountId, setSourceAccountId] = useState(
-    transaction?.source_account_id ?? "",
+    transaction?.source_account_id ?? occurrence?.source_account_id ?? "",
   );
-  const [occurredOn, setOccurredOn] = useState(transaction?.occurred_on ?? today());
+  const [occurredOn, setOccurredOn] = useState(transaction?.occurred_on ?? occurrence?.due_on ?? today());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -145,6 +152,7 @@ export default function TransactionForm({
           name: name.trim() || null,
           categoryId: isTransfer ? null : categoryId || null,
           sourceAccountId: isTransfer ? sourceAccountId : null,
+          recurringId: occurrence?.rule_id ?? null,
         });
       }
 

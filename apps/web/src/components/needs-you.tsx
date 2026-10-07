@@ -14,6 +14,8 @@ import {
   today,
   urgencyOf,
   type OccurrenceRow,
+  formatMoney,
+  parseMoney,
 } from "@/lib/local-db";
 import { useLocalDb } from "@/lib/local-db/provider";
 import { useVault } from "@/lib/local-db/vault";
@@ -93,13 +95,13 @@ export default function NeedsYou({
   const visibleRows = showAll ? prioritizedRows : prioritizedRows.slice(0, 6);
   const hiddenCount = attentionRows.length - visibleRows.length;
 
-  async function settle(row: OccurrenceRow, action: "pay" | "skip") {
+  async function settle(row: OccurrenceRow, action: "pay" | "skip", amountMinor?: number) {
     if (!db || !activeProfile) return;
     setBusy(true);
     setError(null);
     try {
       if (action === "pay") {
-        await confirmOccurrence(db, activeProfile.id, row.id, today());
+        await confirmOccurrence(db, activeProfile.id, row.id, today(), amountMinor);
         setConfirming(null);
       } else {
         await skipOccurrence(db, activeProfile.id, row.id);
@@ -157,12 +159,13 @@ export default function NeedsYou({
             row={row}
             balance={balance}
             format={format}
+            currency={currency}
             incomingByDueDate={incomingByDueDate}
             busy={busy}
             open={confirming?.id === row.id}
             onAsk={() => setConfirming(row)}
             onSkip={() => void settle(row, "skip")}
-            onConfirm={() => void settle(row, "pay")}
+            onConfirm={(amount) => void settle(row, "pay", amount)}
             onCancel={() => setConfirming(null)}
             animationDelay={index * 35}
           />
@@ -194,6 +197,7 @@ function NeedsYouRow({
   row,
   balance,
   format,
+  currency,
   incomingByDueDate,
   busy,
   open,
@@ -206,13 +210,14 @@ function NeedsYouRow({
   row: OccurrenceRow;
   balance: number;
   format: (minor: number) => string;
+  currency: string;
   /** Precomputed in the parent: it is the same for every row in the list. */
   incomingByDueDate: Map<string, number>;
   busy: boolean;
   open: boolean;
   onAsk: () => void;
   onSkip: () => void;
-  onConfirm: () => void;
+  onConfirm: (amount?: number) => void;
   onCancel: () => void;
   animationDelay: number;
 }) {
@@ -296,6 +301,7 @@ function NeedsYouRow({
         <ConfirmDialog
           row={row}
           format={format}
+          currency={currency}
           busy={busy}
           onConfirm={onConfirm}
           onCancel={onCancel}
@@ -358,14 +364,22 @@ function ConfirmDialog({
   busy,
   onConfirm,
   onCancel,
+  currency,
 }: {
   row: OccurrenceRow;
   format: (minor: number) => string;
   busy: boolean;
-  onConfirm: () => void;
+  onConfirm: (amountMinor?: number) => void;
   onCancel: () => void;
+  currency: string;
 }) {
   const inflow = row.type === "inflow";
+  const [amount, setAmount] = useState("");
+
+  const handleConfirm = () => {
+    const minor = parseMoney(amount);
+    onConfirm(minor === null || minor < 0 ? undefined : minor);
+  };
 
   return (
     <div
@@ -382,10 +396,25 @@ function ConfirmDialog({
           : "This takes it out of your balance and counts it as spending."}
       </p>
 
+      <label className="mt-4 block">
+        <span className="text-sm font-medium">Amount (optional)</span>
+        <input
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          inputMode="decimal"
+          placeholder={format(row.amount)}
+          className="mt-2 h-12 w-full rounded-2xl border border-input bg-transparent px-4 text-lg tabular-nums outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+          aria-label={inflow ? "Amount received" : "Amount paid"}
+        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          Leave blank to use the expected amount ({format(row.amount)})
+        </p>
+      </label>
+
       <div className="mt-4 flex gap-2">
         <button
           type="button"
-          onClick={onConfirm}
+          onClick={handleConfirm}
           disabled={busy}
           className="h-11 flex-1 rounded-xl bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-50"
         >

@@ -35,6 +35,8 @@ export type RecurringDraft = {
   /** Minor units. */
   amount: number;
   accountId: string;
+  /** Source account for transfers (where money leaves). */
+  sourceAccountId: string | null;
   categoryId: string | null;
   /** Which way the money goes, so the form opens on the right side. */
   type: TransactionType;
@@ -51,6 +53,8 @@ export type RecurringValues = {
   name: string;
   amount: number;
   accountId: string;
+  /** Source account for transfers (where money leaves). */
+  sourceAccountId: string | null;
   categoryId: string | null;
   frequency: RecurringFrequency;
   anchor: MonthlyAnchor;
@@ -107,6 +111,7 @@ export default function RecurringForm({
     initial ? moneyToInput(initial.amount) : "",
   );
   const [accountId, setAccountId] = useState(initial?.accountId ?? "");
+  const [sourceAccountId, setSourceAccountId] = useState(initial?.sourceAccountId ?? "");
   const [categoryId, setCategoryId] = useState(initial?.categoryId ?? "");
   const [frequency, setFrequency] = useState<RecurringFrequency>(initial?.frequency ?? "monthly");
   const [anchor, setAnchor] = useState<MonthlyAnchor>(initial?.anchor ?? "day_of_month");
@@ -132,8 +137,10 @@ export default function RecurringForm({
   // A category's `kind` is the same axis as a transaction's `type` (money in vs
   // money out) but is spelled differently in the model, so the mapping is
   // explicit. Offering an income category on an expense would be nonsense.
-  const categories = useCategories(type === "inflow" ? "income" : "expense");
+  // Transfers don't use categories.
+  const categories = useCategories(type === "inflow" ? "income" : type === "outflow" ? "expense" : "expense");
   const account = accountId || accounts[0]?.id || "";
+  const sourceAccount = sourceAccountId || accounts.find(a => a.id !== account)?.id || "";
 
   const minor = parseMoney(amount);
   const canSave = Boolean(
@@ -141,6 +148,8 @@ export default function RecurringForm({
       minor !== null &&
       minor > 0 &&
       account &&
+      // For transfers, also require a different source account
+      (type !== "transfer" || (sourceAccount && sourceAccount !== account)) &&
       // A chosen end date must exist, follow the first payment, and the
       // duration must be a real number of months — none of which the visual
       // state alone guarantees (the date can precede a re-picked start).
@@ -181,7 +190,8 @@ export default function RecurringForm({
           name: name.trim(),
           amount: minor,
           accountId: account,
-          categoryId: categoryId || null,
+          sourceAccountId: type === "transfer" ? sourceAccount : null,
+          categoryId: type === "transfer" ? null : (categoryId || null),
           frequency,
           anchor: frequency === "monthly" ? anchor : "day_of_month",
           startsOn: firstDate,
@@ -194,7 +204,8 @@ export default function RecurringForm({
 
       await createRecurring(db, activeProfile.id, {
         accountId: account,
-        categoryId: categoryId || null,
+        sourceAccountId: type === "transfer" ? sourceAccount : undefined,
+        categoryId: type === "transfer" ? undefined : (categoryId || null),
         name: name.trim(),
         amount: minor,
         type,
@@ -248,9 +259,9 @@ export default function RecurringForm({
 
       <div className="flex flex-col gap-6">
         <fieldset className="space-y-2">
-          <legend className="text-sm font-medium">Money coming in or going out</legend>
-          <div className="grid grid-cols-2 gap-2">
-            {(["outflow", "inflow"] as const).map((option) => (
+          <legend className="text-sm font-medium">Money coming in, going out, or moving between accounts</legend>
+          <div className="grid grid-cols-3 gap-2">
+            {(["outflow", "inflow", "transfer"] as const).map((option) => (
               <button
                 key={option}
                 type="button"
@@ -259,6 +270,7 @@ export default function RecurringForm({
                   setType(option);
                   // The category list is filtered by direction, so a category
                   // picked under the other direction is no longer valid.
+                  // Transfers don't use categories.
                   setCategoryId("");
                 }}
                 className={`h-12 rounded-2xl border text-sm font-medium transition-colors ${
@@ -267,7 +279,7 @@ export default function RecurringForm({
                     : "border-input hover:bg-accent/50"
                 }`}
               >
-                {option === "outflow" ? "Money out" : "Money in"}
+                {option === "outflow" ? "Money out" : option === "inflow" ? "Money in" : "Transfer"}
               </button>
             ))}
           </div>
@@ -278,7 +290,7 @@ export default function RecurringForm({
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder={type === "outflow" ? "Rent" : "Salary"}
+            placeholder={type === "outflow" ? "Rent" : type === "inflow" ? "Salary" : "Savings transfer"}
             className={FIELD_CLASS}
           />
         </label>
@@ -309,7 +321,26 @@ export default function RecurringForm({
           </select>
         </label>
 
-        {categories.length > 0 && (
+        {type === "transfer" && (
+          <label className="block text-sm font-medium">
+            From account
+            <select
+              value={sourceAccount}
+              onChange={(event) => setSourceAccountId(event.target.value)}
+              className={FIELD_CLASS}
+            >
+              {accounts
+                .filter((a) => a.id !== account)
+                .map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
+
+        {type !== "transfer" && categories.length > 0 && (
           <label className="block text-sm font-medium">
             Category
             <select

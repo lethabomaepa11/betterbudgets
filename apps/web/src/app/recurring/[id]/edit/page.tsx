@@ -95,6 +95,7 @@ export default function EditRecurringPage() {
     name: rule.name ?? "",
     amount: rule.amount ?? 0,
     accountId: rule.accountId ?? "",
+    sourceAccountId: rule.sourceAccountId,
     categoryId: rule.categoryId,
     type: rule.type ?? "outflow",
     frequency: rule.frequency,
