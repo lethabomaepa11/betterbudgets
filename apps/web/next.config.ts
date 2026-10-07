@@ -3,7 +3,7 @@ import { varlockNextConfigPlugin } from "@varlock/nextjs-integration/plugin";
 const withVarlock = varlockNextConfigPlugin();
 import type { NextConfig } from "next";
 
-import { withPwa } from "./pwa.config";
+import { withPwaWrapper } from "./pwa.config";
 
 const nextConfig: NextConfig = {
   typedRoutes: true,
@@ -35,4 +35,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withVarlock(withPwa(nextConfig));
+export default withVarlock(withPwaWrapper(nextConfig));

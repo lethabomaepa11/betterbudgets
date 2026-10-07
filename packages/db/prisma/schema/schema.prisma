@@ -18,7 +18,6 @@ model SyncRecord {
   deleted   Boolean  @default(false)
   revision  Int
   updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, entity, entityId])
   @@index([userId, revision])
@@ -34,8 +33,8 @@ model SyncChange {
   payload     Json
   deleted     Boolean  @default(false)
   revision    Int
+  processed   Boolean  @default(false)
   createdAt   DateTime @default(now())
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, operationId])
   @@index([userId, revision])

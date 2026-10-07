@@ -157,12 +157,12 @@ const CURRENCY_CODES = [
 
 export const SUPPORTED_CURRENCIES = CURRENCY_CODES;
 
-/** Human-readable label for a currency code, e.g. "ZAR â€” South African rand". */
+/** Human-readable label for a currency code, e.g. "ZAR — South African rand". */
 export function currencyLabel(code: string): string {
   const normalized = code.toUpperCase();
   try {
     const display = new Intl.DisplayNames(["en"], { type: "currency" }).of(normalized);
-    return display ? `${normalized} â€” ${display}` : normalized;
+    return display ? `${normalized} — ${display}` : normalized;
   } catch {
     return normalized;
   }

@@ -8,6 +8,7 @@
     "start": "next start",
     "dev:bare": "node scripts/copy-sqlite-wasm.mjs && next dev --port 3001",
     "env:generate": "varlock codegen",
+    "auth:generate": "varlock run -- pnpm dlx auth@latest generate --config src/server/services.ts --output ../../packages/db/prisma/schema/auth.prisma --yes",
     "test": "pnpm run test:unit && pnpm run test:db",
     "test:unit": "node --experimental-strip-types scripts/run-unit-tests.mts",
     "test:db": "node scripts/verify-occurrences.mjs",
@@ -15,7 +16,10 @@
     "test:e2e": "node --experimental-strip-types scripts/e2e-acceptance.mts"
   },
   "dependencies": {
+    "@betterbudgets/auth": "workspace:*",
+    "@betterbudgets/db": "workspace:*",
     "@betterbudgets/ui": "workspace:*",
+    "@ducanh2912/next-pwa": "^10.2.9",
     "@sqlite.org/sqlite-wasm": "3.53.4-build1",
     "@swc/helpers": "^0.5.23",
     "@tanstack/react-form": "catalog:",

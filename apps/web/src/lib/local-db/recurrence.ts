@@ -177,3 +177,25 @@ export function daysBetween(from: string, to: string): number {
   const end = Date.UTC(b.year, b.month - 1, b.date);
   return Math.round((end - start) / 86_400_000);
 }
+
+/**
+ * The last day a series started on `startsOn` still runs for `months` months:
+ * the start, plus the months, minus one day — so "for 3 months" starting
+ * 15 October includes 15 Oct, 15 Nov and 15 Dec and stops before 15 Jan.
+ *
+ * A duration rather than a count of occurrences on purpose: the same answer
+ * has to hold for weekly and monthly rules without knowing how many dates
+ * fall inside the window.
+ */
+export function durationEnd(startsOn: string, months: number): string {
+  const { year, month, date } = parseDay(startsOn);
+  // The UTC epoch-day this lands on; clamping the day handles a start on the
+  // 31st landing in a shorter month (31 Oct + 1 month = 30 Nov, not a spill
+  // into December).
+  const shifted = new Date(Date.UTC(year, month - 1 + months, 1));
+  const lastDay = daysInMonth(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1);
+  const clamped = Math.min(date, lastDay);
+  const end = new Date(Date.UTC(year, month - 1 + months, clamped));
+  end.setUTCDate(end.getUTCDate() - 1);
+  return toIso(end);
+}

@@ -33,7 +33,7 @@
 //   is what lets someone start budgeting before they have an account.
 
 /** Bumped whenever `MIGRATIONS` gains an entry. Persisted via `PRAGMA user_version`. */
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 /** Tables that participate in sync. Credentials deliberately do not. */
 export const SYNCABLE_TABLES = [
@@ -540,6 +540,16 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
        value TEXT NOT NULL
      )`,
   ],
+
+  // --- 11: a repeating series can end ---
+  //
+  // Until now every rule repeated forever, which is wrong for the two cases
+  // people actually hit: a fixed-term commitment ("three months of lessons")
+  // and a trial that lapses on a date. NULL means forever, so every existing
+  // rule keeps behaving exactly as it did.
+  [
+    `ALTER TABLE recurring_transactions ADD COLUMN end_date TEXT`,
+  ],
 ];
 
 /**
@@ -841,6 +851,11 @@ export type RecurringTransaction = {
   name: string | null;
   amount: number | null;
   tx_type: TransactionType | null;
+  /**
+   * The last day the series runs, `YYYY-MM-DD`. NULL means forever. Added in
+   * schema v11; occurrence generation stops the moment the cursor passes it.
+   */
+  end_date: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

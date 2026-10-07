@@ -45,6 +45,12 @@ export type NewRecurring = {
   anchor?: MonthlyAnchor;
   /** First expected date, `YYYY-MM-DD`. */
   startsOn: string;
+  /**
+   * The last day the series runs, inclusive. NULL (or omitted) means the
+   * series repeats forever — which is every rule that existed before schema
+   * v11 and must stay exactly as it behaved.
+   */
+  endsOn?: string | null;
 };
 
 /** How far an edit reaches. The choice is the user's, not a default. */
@@ -75,6 +81,8 @@ export type RuleChanges = {
   anchor?: MonthlyAnchor;
   /** Re-anchors the series from this date. */
   startsOn?: string;
+  /** New last day, inclusive. `null` explicitly means "repeat forever". */
+  endsOn?: string | null;
 };
 
 /**
@@ -195,6 +203,9 @@ export async function updateRule(
   const frequency = changes.frequency ?? rule.frequency;
   const anchor = changes.anchor ?? rule.anchor;
   const startsOn = changes.startsOn ?? rule.next_due_date;
+  // `undefined` means "leave the end alone"; `null` means the user chose
+  // forever. Collapsing the two would make it impossible to clear an end date.
+  const endsOn = changes.endsOn === undefined ? rule.end_date : changes.endsOn;
   const dayOfMonth = parseDay(startsOn).date;
 
   const pending = await db.query<PlannedOccurrence>(
@@ -207,6 +218,10 @@ export async function updateRule(
   const timestamp = nowIso();
   const recurrenceRule = { frequency, anchor, dayOfMonth };
   const wanted = datesForRule(startsOn, recurrenceRule);
+  // Dates past the new end are not wanted any more: shortening a series has
+  // to retire what it already promised, or the dashboard keeps asking for
+  // payments the rule will never make again.
+  if (endsOn) for (const day of wanted) if (day > endsOn) wanted.delete(day);
   const { keep, retire, preserve } = planOccurrenceEdit(pending, wanted, scope);
 
   const statements: { sql: string; bind: readonly (string | number | null)[] }[] = [
@@ -214,7 +229,7 @@ export async function updateRule(
       sql: `UPDATE recurring_transactions
                SET name = ?, amount = ?, account_id = ?, category_id = ?,
                    frequency = ?, anchor = ?, day_of_month = ?,
-                   next_due_date = ?, updated_at = ?
+                   next_due_date = ?, end_date = ?, updated_at = ?
              WHERE id = ? AND profile_id = ? AND deleted_at IS NULL`,
       bind: [
         name,
@@ -225,6 +240,7 @@ export async function updateRule(
         anchor,
         dayOfMonth,
         startsOn,
+        endsOn,
         timestamp,
         ruleId,
         profileId,
@@ -444,6 +460,8 @@ export type RuleRow = {
   dayOfMonth: number;
   isActive: number;
   nextDueDate: string;
+  /** The series' last day, or null when it repeats forever. */
+  endDate: string | null;
   /** Pending occurrences this rule still owes, for the "3 coming up" line. */
   pending: number;
   /** True when the rule predates v5 and has no template to generate from. */
@@ -457,6 +475,7 @@ export async function listRules(db: LocalDb, profileId: string): Promise<RuleRow
             a.name AS accountName, r.category_id AS categoryId, c.name AS categoryName,
             r.frequency, r.anchor, r.day_of_month AS dayOfMonth,
             r.is_active AS isActive, r.next_due_date AS nextDueDate,
+            r.end_date AS endDate,
             (SELECT COUNT(*) FROM planned_occurrences p
               WHERE p.rule_id = r.id AND p.status = 'pending' AND p.deleted_at IS NULL) AS pending
        FROM recurring_transactions r
@@ -659,14 +678,15 @@ export async function createRecurring(
   const timestamp = nowIso();
   const { date } = parseDay(input.startsOn);
   const anchor = input.anchor ?? "day_of_month";
+  const endsOn = input.endsOn ?? null;
 
   await db.batch([
     {
       sql: `INSERT INTO recurring_transactions
               (id, transaction_id, profile_id, frequency, anchor, day_of_month, is_active,
-               next_due_date, account_id, category_id, name, amount, tx_type,
+               next_due_date, account_id, category_id, name, amount, tx_type, end_date,
                created_at, updated_at, origin)
-            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, 'local')`,
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local')`,
       bind: [
         ruleId,
         // No transaction yet — that is the point. Occurrences are only written
@@ -683,6 +703,7 @@ export async function createRecurring(
         input.name,
         input.amount,
         input.type,
+        endsOn,
         timestamp,
         timestamp,
       ],
@@ -748,6 +769,10 @@ export async function syncRule(
   // Bounded as a backstop: a daily rule over a 45-day horizon needs ~45 rows,
   // and anything wildly beyond that means the horizon maths is wrong.
   for (let guard = 0; guard < 400 && cursor <= horizon; guard += 1) {
+    // The series has a last day and this date is past it: stop here. Ordering
+    // matters — check before inserting, so the end date itself is included
+    // (the loop walks dates in ascending order).
+    if (rule.end_date && cursor > rule.end_date) break;
     if (!seen.has(cursor)) {
       statements.push({
         sql: `INSERT OR IGNORE INTO planned_occurrences

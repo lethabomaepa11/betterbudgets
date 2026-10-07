@@ -1,16 +1,15 @@
 # betterbudgets
 
-This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines Next.js, Hono, and more.
+This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines Next.js, React Native, and more.
 
 ## Features
 
 - **TypeScript** - For type safety and improved developer experience
-- **Next.js** - Full-stack React framework
+- **Next.js** - Full-stack React framework with API routes
 - **React Native** - Build mobile apps using React
 - **Expo** - Tools for React Native development
 - **TailwindCSS** - Utility-first CSS for rapid UI development
 - **Shared UI package** - shadcn/ui primitives live in `packages/ui`
-- **Hono** - Lightweight, performant server framework
 - **Node.js** - Runtime environment
 - **Prisma** - TypeScript-first ORM
 - **PostgreSQL** - Database engine
@@ -37,7 +36,7 @@ pnpm run db:generate
 This project uses PostgreSQL with Prisma.
 
 1. Make sure you have a PostgreSQL database set up.
-2. Update your `apps/server/.env` file with your PostgreSQL connection details.
+2. Update your `apps/web/.env` file with your PostgreSQL connection details.
 
 3. Apply the schema to your database:
 
@@ -53,7 +52,7 @@ pnpm run dev
 
 Open [http://localhost:3001](http://localhost:3001) in your browser to see the web application.
 Use the Expo Go app to run the mobile application.
-The API is running at [http://localhost:3000](http://localhost:3000).
+The API is running at [http://localhost:3001](http://localhost:3001).
 
 ## UI Customization
 
@@ -111,14 +110,14 @@ cd packages/infra && pnpm exec alchemy deploy --stage production
 
 ### Docker Compose
 
-- Target: web + server
-- Config: `docker-compose.yml` (app Dockerfiles live in `apps/*/Dockerfile`)
+- Target: web
+- Config: `docker-compose.yml` (app Dockerfile lives in `apps/web/Dockerfile`)
 - Build images: pnpm run docker:build
 - Start: pnpm run docker:up
 - Logs: pnpm run docker:logs
 - Stop: pnpm run docker:down
 
-Environment variables are read from each app's `.env` file (baked into web builds for public variables) and overridden in `docker-compose.yml` for container networking.
+Environment variables are read from the web app's `.env` file (baked into web builds for public variables) and overridden in `docker-compose.yml` for container networking.
 
 For more details, see the guide on [Deploying with Docker Compose](https://www.better-t-stack.dev/docs/guides/docker).
 
@@ -127,9 +126,8 @@ For more details, see the guide on [Deploying with Docker Compose](https://www.b
 ```
 betterbudgets/
 ├── apps/
-│   ├── web/         # Frontend application (Next.js)
-│   ├── native/      # Mobile application (React Native, Expo)
-│   └── server/      # Backend API (Hono)
+│   ├── web/         # Frontend application (Next.js) with API routes
+│   └── native/      # Mobile application (React Native, Expo)
 ├── packages/
 │   ├── ui/          # Shared shadcn/ui components and styles
 │   ├── auth/        # Authentication configuration & logic

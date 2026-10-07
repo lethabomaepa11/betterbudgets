@@ -11,10 +11,6 @@ export default Alchemy.Stack(
     state: Alchemy.localState(),
   },
   Effect.gen(function* () {
-    const serverDev = yield* Command.Dev("server-dev", {
-      command: "pnpm run dev:bare",
-      cwd: "../../apps/server",
-    });
     const webDev = yield* Command.Dev("web-dev", {
       command: "pnpm run dev:bare",
       cwd: "../../apps/web",
@@ -22,7 +18,6 @@ export default Alchemy.Stack(
 
     return {
       web: webDev.url,
-      server: serverDev.url,
     };
   }),
 );

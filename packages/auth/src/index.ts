@@ -15,6 +15,7 @@ export function createAuth(
   database: Database,
   desktopOrigins: readonly string[] = [],
 ) {
+  const isDevelopment = env.NODE_ENV === "development";
   return betterAuth({
     database: prismaAdapter(database, {
       provider: "postgresql",
@@ -24,7 +25,7 @@ export function createAuth(
       ...desktopOrigins,
       "betterbudgets://",
       "http://localhost:8081",
-      ...(env.NODE_ENV === "production" ? [] : ["exp://"]),
+      ...(isDevelopment ? ["exp://"] : []),
     ],
     emailAndPassword: { enabled: true },
     rateLimit: {
@@ -45,8 +46,8 @@ export function createAuth(
         ipAddressHeaders: ["x-forwarded-for", "x-real-ip"],
       },
       defaultCookieAttributes: {
-        sameSite: "none",
-        secure: true,
+        sameSite: isDevelopment ? "lax" : "none",
+        secure: !isDevelopment,
         httpOnly: true,
       },
     },
