@@ -6,9 +6,12 @@ import { ArrowLeft, Check } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import CalendarPicker from "@/components/calendar-picker";
 import {
   createRecurring,
   describeRule,
+  durationEnd,
+  formatDay,
   moneyToInput,
   parseMoney,
   today,
@@ -39,6 +42,8 @@ export type RecurringDraft = {
   anchor: MonthlyAnchor;
   /** The next due date the rule already has, reused as the anchor. */
   startsOn: string;
+  /** The series' last day, or null when it repeats forever. */
+  endsOn: string | null;
 };
 
 /** Values as the caller receives them, before the form's string conversions. */
@@ -50,10 +55,15 @@ export type RecurringValues = {
   frequency: RecurringFrequency;
   anchor: MonthlyAnchor;
   startsOn: string;
+  /** The computed last day, inclusive — null means the series never ends. */
+  endsOn: string | null;
   type: TransactionType;
   /** Only meaningful when editing; defaults to `future` on create. */
   scope: EditScope;
 };
+
+/** How long the series runs. The three answers the range control offers. */
+export type EndsKind = "forever" | "months" | "date";
 
 /**
  * Sets up money that repeats: rent, a salary, a subscription.
@@ -105,6 +115,13 @@ export default function RecurringForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // The range. An edit opens with the concrete end date the rule already has
+  // ("until …" is the truth either way); a fresh create starts at forever,
+  // which is what every rule meant before the column existed.
+  const [endsKind, setEndsKind] = useState<EndsKind>(initial?.endsOn ? "date" : "forever");
+  const [durationMonths, setDurationMonths] = useState(3);
+  const [endDate, setEndDate] = useState(initial?.endsOn ?? "");
+
   // Accounts load from the SQLite worker after the first render. Pick the
   // first available account once it arrives, while preserving an explicit
   // choice or an edit's existing account.
@@ -119,14 +136,40 @@ export default function RecurringForm({
   const account = accountId || accounts[0]?.id || "";
 
   const minor = parseMoney(amount);
-  const canSave = Boolean(name.trim() && minor !== null && minor > 0 && account);
+  const canSave = Boolean(
+    name.trim() &&
+      minor !== null &&
+      minor > 0 &&
+      account &&
+      // A chosen end date must exist, follow the first payment, and the
+      // duration must be a real number of months — none of which the visual
+      // state alone guarantees (the date can precede a re-picked start).
+      (endsKind === "forever" ||
+        (endsKind === "months" && durationMonths >= 1) ||
+        (endsKind === "date" && endDate !== "" && endDate >= firstDate)),
+  );
+
+  // The concrete last day, whichever control produced it. This — not the
+  // control's state — is what is stored, so the three modes collapse into one
+  // column and generation never has to know how the user phrased the range.
+  const endsOn: string | null =
+    endsKind === "forever"
+      ? null
+      : endsKind === "date"
+        ? endDate
+        : durationEnd(firstDate, durationMonths);
 
   // Shown back before saving, so the rule is never a surprise afterwards.
-  const summary = describeRule({
+  const baseSummary = describeRule({
     frequency,
     anchor,
     dayOfMonth: Number(firstDate.slice(8, 10)) || 1,
   });
+  const summary = endsOn
+    ? endsKind === "months"
+      ? `${baseSummary} · for ${durationMonths} ${durationMonths === 1 ? "month" : "months"}, until ${formatDay(endsOn)}`
+      : `${baseSummary} · until ${formatDay(endsOn)}`
+    : baseSummary;
 
   async function save() {
     if (!db || !activeProfile || !canSave || minor === null) return;
@@ -142,6 +185,7 @@ export default function RecurringForm({
           frequency,
           anchor: frequency === "monthly" ? anchor : "day_of_month",
           startsOn: firstDate,
+          endsOn,
           type,
           scope,
         });
@@ -157,6 +201,7 @@ export default function RecurringForm({
         frequency,
         anchor: frequency === "monthly" ? anchor : undefined,
         startsOn: firstDate,
+        endsOn,
       });
       router.push("/dashboard");
     } catch (cause) {
@@ -329,13 +374,90 @@ export default function RecurringForm({
 
         <label className="block text-sm font-medium">
           First one is due
-          <input
-            type="date"
-            value={firstDate}
-            onChange={(event) => setFirstDate(event.target.value)}
-            className={FIELD_CLASS}
-          />
+          <CalendarPicker value={firstDate} onChange={setFirstDate} />
         </label>
+
+        {/* The range, phrased the way people actually think about a commitment:
+            never, for a stretch of months, or until a date they already know.
+            Each choice collapses to one concrete `end_date` before saving, so
+            the column (and everything downstream of it) only ever sees a date
+            or nothing at all. */}
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">How long it repeats</legend>
+          <div className="grid grid-cols-3 gap-2">
+            {(
+              [
+                { value: "forever" as const, label: "Forever" },
+                { value: "months" as const, label: "For months" },
+                { value: "date" as const, label: "Until a date" },
+              ]
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={endsKind === option.value}
+                onClick={() => setEndsKind(option.value)}
+                className={`h-11 rounded-2xl border text-sm font-medium transition-colors ${
+                  endsKind === option.value
+                    ? "border-primary bg-primary-subtle text-primary"
+                    : "border-input hover:bg-accent/50"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          {endsKind === "months" && (
+            <div>
+              <div className="grid grid-cols-4 gap-2">
+                {[1, 3, 6, 12].map((months) => (
+                  <button
+                    key={months}
+                    type="button"
+                    aria-pressed={durationMonths === months}
+                    onClick={() => setDurationMonths(months)}
+                    className={`h-10 rounded-2xl border text-sm transition-colors ${
+                      durationMonths === months
+                        ? "border-primary bg-primary-subtle text-primary"
+                        : "border-input hover:bg-accent/50"
+                    }`}
+                  >
+                    {months}m
+                  </button>
+                ))}
+              </div>
+              <label className="mt-2 flex items-center gap-3 text-sm text-muted-foreground">
+                <span>Custom</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={120}
+                  value={durationMonths}
+                  onChange={(event) => {
+                    const next = Number(event.target.value);
+                    if (Number.isFinite(next)) {
+                      setDurationMonths(Math.max(1, Math.min(120, Math.floor(next))));
+                    }
+                  }}
+                  className="h-10 w-20 rounded-2xl border border-input bg-transparent px-3 text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                  aria-label="Number of months"
+                />
+                <span>months</span>
+              </label>
+            </div>
+          )}
+
+          {endsKind === "date" && (
+            <CalendarPicker
+              value={endDate}
+              onChange={setEndDate}
+              min={firstDate}
+              placeholder="Ends on…"
+            />
+          )}
+        </fieldset>
 
         <p className="rounded-2xl bg-muted/50 p-4 text-sm text-muted-foreground">
           {name.trim() || "This"} · {summary}.

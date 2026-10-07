@@ -64,6 +64,7 @@ export default function EditRecurringPage() {
         frequency: values.frequency,
         anchor: values.anchor,
         startsOn: values.startsOn,
+        endsOn: values.endsOn,
       },
       values.scope,
     );
@@ -99,6 +100,7 @@ export default function EditRecurringPage() {
     frequency: rule.frequency,
     anchor: rule.anchor,
     startsOn: rule.nextDueDate,
+    endsOn: rule.endDate,
   };
 
   return <RecurringForm initial={draft} editing onSubmit={submit} />;

@@ -28,7 +28,7 @@ type Change = {
 const columns: Record<SyncableTable, readonly string[]> = {
   accounts: ["id", "profile_id", "name", "type", "balance", "is_archived", "created_at", "updated_at", "deleted_at", "origin"],
   transactions: ["id", "account_id", "source_account_id", "name", "amount", "type", "is_allowance", "occurred_on", "created_at", "updated_at", "deleted_at", "origin", "recurring_id", "category_id", "notes"],
-  recurring_transactions: ["id", "profile_id", "transaction_id", "frequency", "anchor", "day_of_month", "is_active", "next_due_date", "account_id", "category_id", "name", "amount", "tx_type", "created_at", "updated_at", "deleted_at", "origin"],
+  recurring_transactions: ["id", "profile_id", "transaction_id", "frequency", "anchor", "day_of_month", "is_active", "next_due_date", "account_id", "category_id", "name", "amount", "tx_type", "end_date", "created_at", "updated_at", "deleted_at", "origin"],
   planned_occurrences: ["id", "profile_id", "rule_id", "account_id", "category_id", "name", "amount", "type", "due_on", "status", "paid_transaction_id", "settled_on", "created_at", "updated_at", "deleted_at", "origin"],
   financial_goals: ["id", "profile_id", "account_id", "name", "target_amount", "current_amount", "target_date", "monthly_required", "feasibility", "intent", "status", "created_at", "updated_at", "deleted_at", "origin"],
   goal_recommendations: ["id", "profile_id", "goal_id", "title", "description", "created_at", "updated_at", "deleted_at", "origin"],

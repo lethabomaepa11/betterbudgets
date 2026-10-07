@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>You are offline</title>
+    <title>You are offline - betterbudgets</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -14,17 +14,97 @@
         display: grid;
         place-content: center;
         padding: 1.5rem;
+        margin: 0;
       }
       a {
         color: inherit;
       }
+      .offline-card {
+        text-align: center;
+        max-width: 400px;
+      }
+      .offline-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+      }
+      h1 {
+        margin: 0 0 0.5rem;
+        font-size: 1.5rem;
+      }
+      p {
+        margin: 0 0 1.5rem;
+        color: #666;
+      }
+      .features {
+        text-align: left;
+        background: #f5f5f5;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1.5rem 0;
+      }
+      .features h2 {
+        font-size: 1rem;
+        margin: 0 0 0.5rem;
+      }
+      .features ul {
+        margin: 0;
+        padding-left: 1.2rem;
+      }
+      .features li {
+        margin: 0.25rem 0;
+        font-size: 0.9rem;
+      }
+      button {
+        background: #6366f1;
+        color: white;
+        border: none;
+        padding: 0.75rem 1.5rem;
+        border-radius: 6px;
+        font-size: 1rem;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #4f46e5;
+      }
+      @media (prefers-color-scheme: dark) {
+        .features {
+          background: #2d2d2d;
+        }
+        p {
+          color: #aaa;
+        }
+      }
     </style>
   </head>
   <body>
-    <main>
-      <h1>You are offline</h1>
-      <p>Reconnect to the internet to load this page.</p>
-      <a href="/">Try again</a>
+    <main class="offline-card">
+      <div class="offline-icon">📱</div>
+      <h1>You're Offline</h1>
+      <p>Don't worry! betterbudgets works offline.</p>
+      
+      <div class="features">
+        <h2>What still works:</h2>
+        <ul>
+          <li>✅ View all your accounts, transactions & budgets</li>
+          <li>✅ Add new transactions & recurring rules</li>
+          <li>✅ Create budgets & financial goals</li>
+          <li>✅ All data stored locally on your device</li>
+        </ul>
+      </div>
+      
+      <div class="features">
+        <h2>What needs internet:</h2>
+        <ul>
+          <li>☁️ Syncing changes across devices</li>
+          <li>☁️ AI budget planning</li>
+          <li>☁️ Signing in / creating account</li>
+        </ul>
+      </div>
+      
+      <button onclick="window.location.reload()">Try Again</button>
+      <p style="margin-top: 1rem; font-size: 0.85rem; color: #888;">
+        Your changes will sync automatically when you're back online.
+      </p>
     </main>
   </body>
 </html>

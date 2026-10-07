@@ -94,6 +94,7 @@ export {
   daysBetween,
   daysInMonth,
   describeRule,
+  durationEnd,
   nextOccurrence,
   parseDay,
   ruleFromDate,

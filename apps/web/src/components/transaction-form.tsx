@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
@@ -10,6 +10,7 @@ import { useLocalDb } from "@/lib/local-db/provider";
 import { parseMoney, today, type TransactionType } from "@/lib/local-db";
 import { useVault } from "@/lib/local-db/vault";
 
+import CalendarPicker from "@/components/calendar-picker";
 import { useCategories } from "@/hooks/use-categories";
 
 /** Highlight colours per direction, keyed by the model's own vocabulary. */
@@ -84,6 +85,18 @@ export default function TransactionForm({
   const [occurredOn, setOccurredOn] = useState(transaction?.occurred_on ?? today());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Accounts load from the SQLite worker after the first render, so the state
+  // seeded above is `""` whenever the list was still empty on mount (the usual
+  // case on `/transactions/new`). Without this, the select renders unselected —
+  // or a browser defaults to the first row — while the state stays empty and
+  // submit reports "Choose an account." Default it once the list lands, while
+  // preserving an explicit choice or an edit's existing account.
+  useEffect(() => {
+    if (!transaction && !defaultAccountId && !accountId && accounts[0]) {
+      setAccountId(accounts[0].id);
+    }
+  }, [accounts, accountId, defaultAccountId, transaction]);
 
   // Categories follow the direction: switching from "Money out" to "Money in"
   // has to swap the list, and a category from the other direction would file a
@@ -284,12 +297,7 @@ export default function TransactionForm({
 
       <label className="block">
         <span className="text-sm font-medium">Date</span>
-        <input
-          type="date"
-          value={occurredOn}
-          onChange={(event) => setOccurredOn(event.target.value)}
-          className={FIELD_CLASS}
-        />
+        <CalendarPicker value={occurredOn} onChange={setOccurredOn} />
       </label>
 
       {error && (

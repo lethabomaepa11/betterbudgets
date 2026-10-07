@@ -9,6 +9,7 @@ import Link from "next/link";
 import {
   deleteRule,
   describeRule,
+  formatDay,
   formatMoney,
   listRules,
   setRuleActive,
@@ -203,6 +204,7 @@ function RuleList({
                     anchor: rule.anchor,
                     dayOfMonth: rule.dayOfMonth,
                   })}
+                  {rule.endDate ? ` · until ${formatDay(rule.endDate)}` : ""}
                 </p>
 
                 {/* Says the thing plainly rather than showing a date that will

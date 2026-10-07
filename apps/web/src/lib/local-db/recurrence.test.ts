@@ -14,6 +14,7 @@ import {
   dayInMonth,
   daysBetween,
   daysInMonth,
+  durationEnd,
   nextOccurrence,
 } from "./recurrence.ts";
 
@@ -161,6 +162,27 @@ test("daysBetween is signed and spans month boundaries", () => {
   assert.equal(daysBetween("2026-10-04", "2026-10-01"), -3);
   assert.equal(daysBetween("2026-02-28", "2026-03-01"), 1);
   assert.equal(daysBetween("2028-02-28", "2028-03-01"), 2);
+});
+
+test("durationEnd covers exactly the requested months", () => {
+  // 15 Oct for 3 months: the 15th of Oct, Nov, Dec are inside; 15 Jan is not,
+  // so the last allowed day is 14 Jan — one day short of the fourth payment.
+  assert.equal(durationEnd("2026-10-15", 3), "2027-01-14");
+  // A single month is just the rest of this one.
+  assert.equal(durationEnd("2026-10-15", 1), "2026-11-14");
+});
+
+test("durationEnd clamps a start on the 31st rather than spilling a month", () => {
+  // 31 Oct + 1 month has no 31st in November: clamp to the 30th, then subtract
+  // the day, landing in November — never in December.
+  assert.equal(durationEnd("2026-10-31", 1), "2026-11-29");
+  assert.equal(durationEnd("2026-01-31", 1), "2026-02-27");
+  assert.equal(durationEnd("2026-12-31", 2), "2027-02-27");
+});
+
+test("durationEnd crosses year boundaries", () => {
+  assert.equal(durationEnd("2026-11-15", 4), "2027-03-14");
+  assert.equal(durationEnd("2026-12-01", 12), "2027-11-30");
 });
 
 console.log(`\n${passed} recurrence assertions passed`);
