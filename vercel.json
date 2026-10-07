@@ -1,16 +1,13 @@
 {
   "version": 2,
-  "buildCommand": "pnpm --filter server build",
-  "builds": [
-    {
-      "src": "api/index.js",
-      "use": "@vercel/node"
+  "framework": "nextjs",
+  "buildCommand": "pnpm --filter @betterbudgets/db db:generate && pnpm --filter web build",
+  "devCommand": "pnpm --filter web dev:bare",
+  "installCommand": "pnpm install",
+  "regions": ["iad1"],
+  "functions": {
+    "apps/web/src/app/**/*.ts": {
+      "maxDuration": 30
     }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/api/index.js"
-    }
-  ]
+  }
 }
